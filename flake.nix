@@ -1,5 +1,5 @@
 {
-  description = "Build a cargo project";
+  description = "USB Pass-Through vfio-user Tools";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -59,14 +59,14 @@
 
         # Build the actual crate itself, reusing the dependency
         # artifacts from above.
-        my-crate = craneLib.buildPackage (commonArgs // {
+        usbvfiod = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
         });
       in
       {
         checks = {
           # Build the crate as part of `nix flake check` for convenience
-          inherit my-crate;
+          inherit usbvfiod;
 
           # Run clippy (and deny all warnings) on the crate source,
           # again, reusing the dependency artifacts from above.
@@ -74,40 +74,40 @@
           # Note that this is done as a separate derivation so that
           # we can block the CI if there are issues here, but not
           # prevent downstream consumers from building our crate by itself.
-          my-crate-clippy = craneLib.cargoClippy (commonArgs // {
+          usbvfiod-clippy = craneLib.cargoClippy (commonArgs // {
             inherit cargoArtifacts;
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
           });
 
-          my-crate-doc = craneLib.cargoDoc (commonArgs // {
+          usbvfiod-doc = craneLib.cargoDoc (commonArgs // {
             inherit cargoArtifacts;
           });
 
           # Check formatting
-          my-crate-fmt = craneLib.cargoFmt {
+          usbvfiod-fmt = craneLib.cargoFmt {
             inherit src;
           };
 
-          my-crate-toml-fmt = craneLib.taploFmt {
+          usbvfiod-toml-fmt = craneLib.taploFmt {
             src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
             # taplo arguments can be further customized below as needed
             # taploExtraArgs = "--config ./taplo.toml";
           };
 
           # Audit dependencies
-          my-crate-audit = craneLib.cargoAudit {
+          usbvfiod-audit = craneLib.cargoAudit {
             inherit src advisory-db;
           };
 
           # Audit licenses
-          my-crate-deny = craneLib.cargoDeny {
+          usbvfiod-deny = craneLib.cargoDeny {
             inherit src;
           };
 
           # Run tests with cargo-nextest
-          # Consider setting `doCheck = false` on `my-crate` if you do not want
+          # Consider setting `doCheck = false` on `usbvfiod` if you do not want
           # the tests to run twice
-          my-crate-nextest = craneLib.cargoNextest (commonArgs // {
+          usbvfiod-nextest = craneLib.cargoNextest (commonArgs // {
             inherit cargoArtifacts;
             partitions = 1;
             partitionType = "count";
@@ -116,15 +116,15 @@
         };
 
         packages = {
-          default = my-crate;
+          default = usbvfiod;
         } // lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
-          my-crate-llvm-coverage = craneLibLLvmTools.cargoLlvmCov (commonArgs // {
+          usbvfiod-llvm-coverage = craneLibLLvmTools.cargoLlvmCov (commonArgs // {
             inherit cargoArtifacts;
           });
         };
 
         apps.default = flake-utils.lib.mkApp {
-          drv = my-crate;
+          drv = usbvfiod;
         };
 
         devShells.default = craneLib.devShell {
