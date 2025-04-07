@@ -12,7 +12,11 @@
       inputs.rust-analyzer-src.follows = "";
     };
 
+    # Expand this to default-linux later.
+    systems.url = "github:nix-systems/x86_64-linux";
+
     flake-utils.url = "github:numtide/flake-utils";
+    flake-utils.inputs.systems.follows = "systems";
 
     advisory-db = {
       url = "github:rustsec/advisory-db";
