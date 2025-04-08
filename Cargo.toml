@@ -1,4 +1,6 @@
 [package]
+authors = ["Cyberus Technology GmbH"]
+description = "A vfio-user server for USB pass-through."
 name = "usbvfiod"
 version = "0.1.0"
 edition = "2021"
@@ -7,3 +9,11 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clap = { version = "4.5.35", features = [
+  "cargo",
+  "color",
+  "derive",
+  "help",
+  "std",
+  "usage",
+], default-features = false }
