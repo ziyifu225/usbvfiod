@@ -1,11 +1,12 @@
 mod cli;
 
+use anyhow::{Context, Result};
 use clap::Parser;
 use cli::Cli;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let args = Cli::parse();
 
     let subscriber = FmtSubscriber::builder()
@@ -16,7 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)?;
+    tracing::subscriber::set_global_default(subscriber)
+        .context("Failed to set global tracing subscriber")?;
 
     info!("We're up!");
 
