@@ -1,4 +1,6 @@
 [package]
+authors = ["Cyberus Technology GmbH"]
+description = "A vfio-user server for USB pass-through."
 name = "usbvfiod"
 version = "0.1.0"
 edition = "2021"
@@ -7,3 +9,24 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = { version = "1.0.97", default-features = false, features = ["std"] }
+clap = { version = "4.5.35", features = [
+  "cargo",
+  "color",
+  "derive",
+  "help",
+  "std",
+  "usage",
+], default-features = false }
+tracing = { version = "0.1.41", default-features = false, features = [
+  "log",
+  "std",
+] }
+tracing-subscriber = { version = "0.3.19", default-features = false, features = [
+  "std",
+  "alloc",
+  "fmt",
+  "env-filter",
+  "ansi",
+  "tracing-log",
+] }
