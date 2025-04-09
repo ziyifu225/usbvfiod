@@ -14,12 +14,16 @@ clap = { version = "4.5.35", features = [
   "cargo",
   "color",
   "derive",
+  "error-context",
   "help",
   "std",
   "usage",
 ], default-features = false }
 tracing = { version = "0.1.41", default-features = false, features = [
   "log",
+  "std",
+] }
+tracing-log = { version = "0.2.0", default-features = false, features = [
   "std",
 ] }
 tracing-subscriber = { version = "0.3.19", default-features = false, features = [

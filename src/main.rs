@@ -20,6 +20,9 @@ fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .context("Failed to set global tracing subscriber")?;
 
+    // Log messages from the log crate as well.
+    tracing_log::LogTracer::init()?;
+
     info!("We're up!");
 
     Ok(())
