@@ -672,7 +672,7 @@ impl<'a> Bus {
         &'a self,
         offset: u64,
         slice: &[u8],
-    ) -> impl Iterator<Item = BulkRequestChunk> {
+    ) -> impl Iterator<Item = BulkRequestChunk<'a>> {
         BulkRequestIterator::new(self, offset, slice)
     }
 }
