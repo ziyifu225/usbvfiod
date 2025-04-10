@@ -415,7 +415,7 @@ struct CapabilityIterator<'a> {
     cap_offset: u8,
 }
 
-impl<'a> Iterator for CapabilityIterator<'a> {
+impl Iterator for CapabilityIterator<'_> {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
