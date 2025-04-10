@@ -84,6 +84,11 @@ impl ConfigSpaceBuilder {
             .u8_ro_at(offset::MIN_GNT, 0)
             .u8_ro_at(offset::MAX_LAT, 0);
 
+        for i in 0..MAX_BARS {
+            // Unimplemented BARs are hardwired to zero.
+            reg_builder.u32_le_ro_at(offset::BAR_0 + i * 4, 0);
+        }
+
         Self {
             reg_builder,
             multifunction: false,
