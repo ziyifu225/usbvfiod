@@ -41,7 +41,7 @@ impl MsiMessage {
 /// Devices using this trait to send interrupts are supposed to be implemented like this:
 ///
 /// ```
-/// use particle_devices::msi_receiver::{MsiReceiver, MsiMessage};
+/// use usbvfiod::device::msi_receiver::{MsiReceiver, MsiMessage};
 ///
 /// struct Device {
 ///     vector: MsiMessage,

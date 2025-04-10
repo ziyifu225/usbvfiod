@@ -19,8 +19,6 @@ pub enum RequestKind {
 
 /// The interface a device has to implement to be added to a PCI bus.
 ///
-/// PCI devices are usually attached to a [`PciRoot`](super::root::PciRoot).
-///
 /// PCI devices have to respond to requests in three different "address spaces":
 ///
 /// - PCI Configuration Space,

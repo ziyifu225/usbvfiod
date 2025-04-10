@@ -15,7 +15,7 @@ use crate::device::bus::{Request, SingleThreadedBusDevice};
 /// # Examples
 ///
 /// ```
-/// use particle_devices::register_set::*;
+/// use usbvfiod::device::register_set::*;
 ///
 /// let region: RegisterSet::<8> = RegisterSetBuilder::<8>::new()
 ///     .u8_ro_at(0, 0xAB)        // A completely read-only byte register containing 0xAB at offset 0.
