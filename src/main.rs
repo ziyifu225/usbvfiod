@@ -25,13 +25,19 @@ fn main() -> Result<()> {
     // Log messages from the log crate as well.
     tracing_log::LogTracer::init()?;
 
+    let mut backend = xhci_backend::XhciBackend::new();
+
+    let server = if let cli::ServerSocket::Path(socket_path) = args.server_socket() {
+        Server::new(socket_path, true, backend.irqs(), backend.regions())
+            .context("Failed to create vfio-user server")?
+    } else {
+        unimplemented!("Using a file descriptor as vfio-user connection is not implemented")
+    };
+
     info!("We're up!");
 
-    let mut backend = xhci_backend::XhciBackend::new();
-    let s = Server::new(&args.socket_path, true, backend.irqs(), backend.regions())
-        .context("Failed to create vfio-user server")?;
-
-    s.run(&mut backend)
+    server
+        .run(&mut backend)
         .context("Failed to start vfio-user server")?;
     Ok(())
 }
