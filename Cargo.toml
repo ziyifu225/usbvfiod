@@ -34,6 +34,7 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
   "ansi",
   "tracing-log",
 ] }
+vfio-bindings = { git = "https://github.com/rust-vmm/vfio", branch = "main" }
 vfio_user = { git = "https://github.com/rust-vmm/vfio-user.git" }
 
 [dev-dependencies]

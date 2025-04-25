@@ -635,6 +635,7 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
+ "vfio-bindings",
  "vfio_user",
 ]
 
@@ -661,7 +662,7 @@ dependencies = [
 [[package]]
 name = "vfio_user"
 version = "0.1.0"
-source = "git+https://github.com/rust-vmm/vfio-user.git#3febcdd3fa2531623865663ca1721e1962ed9979"
+source = "git+https://github.com/rust-vmm/vfio-user.git#669eb6b2652a3a6acd9986811219f9c25f464188"
 dependencies = [
  "bitflags 1.3.2",
  "libc",
