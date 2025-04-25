@@ -3,7 +3,6 @@
 //! This module contains the core traits for PCI emulation. See [`PciDevice`].
 
 use std::fmt::Debug;
-use std::{collections::BTreeMap, sync::Arc};
 
 use crate::device::bus::Request;
 
@@ -86,24 +85,3 @@ pub trait PciDevice: Debug {
     #[must_use]
     fn try_io_read(&self, kind: RequestKind, req: Request) -> Option<u64>;
 }
-
-/// An integer denoting a device/function pair.
-///
-/// This is used to address devices on a single PCI bus.
-///
-/// The device part are bits 7:3 and the function part is bits 2:0.
-pub type DeviceFunctionIndex = u8;
-
-/// A map from device-function to a PCI device reference.
-pub type DeviceFunctionMap = BTreeMap<DeviceFunctionIndex, PciDeviceRef>;
-
-/// A special PCI device that can be a PCI host bridge at BDF 0:0.0.
-pub trait HostBridge: PciDevice {
-    /// Returns a map of companion devices for the host bridge.
-    ///
-    /// These devices are always automatically added to the PCI bus when it is created.
-    fn reserved_devices(&self) -> DeviceFunctionMap;
-}
-
-/// A reference-counted reference to a PCI device.
-pub type PciDeviceRef = Arc<dyn PciDevice + Send + Sync>;
