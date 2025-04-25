@@ -19,8 +19,15 @@ pub struct XhciController {
     config_space: ConfigSpace,
 }
 
+impl Default for XhciController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl XhciController {
     /// Create a new XHCI controller with default settings.
+    #[must_use]
     pub fn new() -> Self {
         use crate::device::pci::constants::config_space::*;
 

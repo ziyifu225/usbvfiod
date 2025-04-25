@@ -1,10 +1,12 @@
 mod cli;
+mod xhci_backend;
 
-use anyhow::{Context, Result};
+pub(crate) use anyhow::{Context, Result};
 use clap::Parser;
 use cli::Cli;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
+use vfio_user::Server;
 
 fn main() -> Result<()> {
     let args = Cli::parse();
@@ -25,5 +27,11 @@ fn main() -> Result<()> {
 
     info!("We're up!");
 
+    let mut backend = xhci_backend::XhciBackend::new();
+    let s = Server::new(&args.socket_path, true, backend.irqs(), backend.regions())
+        .context("Failed to create vfio-user server")?;
+
+    s.run(&mut backend)
+        .context("Failed to start vfio-user server")?;
     Ok(())
 }
