@@ -77,6 +77,7 @@ pub mod config_space {
     pub mod vendor {
         pub const INVALID: u16 = 0xFFFF;
         pub const INTEL: u16 = 0x8086;
+        pub const REDHAT: u16 = 0x1b36;
         pub const VIRTIO: u16 = 0x1AF4;
     }
 
@@ -85,6 +86,7 @@ pub mod config_space {
         pub const I440FX_HOST_BRIDGE: u16 = 0x1237;
         pub const PIIX4_ISA_BRIDGE: u16 = 0x7110;
         pub const PIIX4_PM_DEVICE: u16 = 0x7113;
+        pub const REDHAT_XHCI: u16 = 0x000d;
 
         /// Virtio devices occupy a range of device IDs.
         ///
@@ -107,6 +109,7 @@ pub mod config_space {
     /// PCI class constants.
     pub mod class {
         pub const BRIDGE: u8 = 0x6;
+        pub const SERIAL: u8 = 0xc;
         pub const UNASSIGNED: u8 = 0xFF;
     }
 
@@ -115,7 +118,13 @@ pub mod config_space {
         pub const HOST_BRIDGE: u8 = 0x0;
         pub const PCI_TO_ISA_BRIDGE: u8 = 0x1;
         pub const OTHER_BRIDGE: u8 = 0x80;
+        pub const SERIAL_USB: u8 = 0x03;
         pub const UNASSIGNED: u8 = 0xFF;
+    }
+
+    /// PCI programming interface constants.
+    pub mod progif {
+        pub const USB_XHCI: u8 = 0x30;
     }
 
     /// PCI header type.
