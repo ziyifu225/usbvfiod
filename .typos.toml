@@ -1,0 +1,7 @@
+# Configuration for the typos spell checker utility (<https://github.com/crate-ci/typos>).
+
+[default.extend-words]
+BARs = "BARs"
+
+[default.extend-identifiers]
+BARs = "BARs"
