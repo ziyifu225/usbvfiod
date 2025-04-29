@@ -76,6 +76,7 @@
             src = ./.;
             hooks = {
               nixpkgs-fmt.enable = true;
+              rustfmt.enable = true;
             };
           };
 
