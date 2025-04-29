@@ -46,7 +46,7 @@ do:
 
 ```console
 $ cloud-hypervisor --memory size=4G,shared=on --serial tty --user-device socket=/tmp/ubvfvfiod-socket --console off \
-	-kernel KERNEL -initramfs INITRAMFS -cmdline CMDLINE
+    -kernel KERNEL -initramfs INITRAMFS -cmdline CMDLINE
 ```
 
 To get a kernel and initramfs to play with, you can use the NixOS netboot binaries:

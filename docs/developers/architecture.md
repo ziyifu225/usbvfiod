@@ -29,8 +29,8 @@ graph LR
     A[cloud-hypervisor]
     B[usbvfiod]
     A -- vfio-user --- B
-	C[Linux kernel]
-	B -- USB API --- C
+    C[Linux kernel]
+    B -- USB API --- C
 ```
 
 `usbvfiod` connects to Cloud Hypervisor via the [`vfio-user`
