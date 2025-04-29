@@ -70,6 +70,7 @@
               typos.enable = true;
               deadnix.enable = true;
               statix.enable = true;
+              gitlint.enable = true;
             };
           };
 
