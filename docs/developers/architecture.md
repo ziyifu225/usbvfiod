@@ -29,8 +29,8 @@ graph LR
     A[cloud-hypervisor]
     B[usbvfiod]
     A -- vfio-user --- B
-	C[Linux kernel]
-	B -- USB API --- C
+    C[Linux kernel]
+    B -- USB API --- C
 ```
 
 `usbvfiod` connects to Cloud Hypervisor via the [`vfio-user`
@@ -45,7 +45,7 @@ This setup is somewhat similar to
 [`vhost-user`](https://qemu-project.gitlab.io/qemu/interop/vhost-user.html)
 instead of `vfio-user`, but otherwise has a very similar setup.
 
-`usbvfiod` accesses USB devices using the Linux kernel's [userpace USB
+`usbvfiod` accesses USB devices using the Linux kernel's [userspace USB
 API](https://www.kernel.org/doc/html/latest/driver-api/usb/usb.html#the-usb-character-device-nodes). As
 such, `usbvfiod` runs as a normal Linux process.
 

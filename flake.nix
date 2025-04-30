@@ -22,9 +22,12 @@
       url = "github:rustsec/advisory-db";
       flake = false;
     };
+
+    git-hooks.url = "github:cachix/git-hooks.nix";
+    git-hooks.inputs.systems.follows = "systems";
   };
 
-  outputs = { self, nixpkgs, crane, fenix, flake-utils, advisory-db, ... }:
+  outputs = { self, nixpkgs, crane, fenix, flake-utils, advisory-db, git-hooks, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -38,16 +41,6 @@
         commonArgs = {
           inherit src;
           strictDeps = true;
-
-          buildInputs = [
-            # Add additional build inputs here
-          ] ++ lib.optionals pkgs.stdenv.isDarwin [
-            # Additional darwin specific inputs can be set here
-            pkgs.libiconv
-          ];
-
-          # Additional environment variables can be set directly
-          # MY_CUSTOM_VAR = "some value";
         };
 
         craneLibLLvmTools = craneLib.overrideToolchain
@@ -69,6 +62,18 @@
       in
       {
         checks = {
+          pre-commit-check = git-hooks.lib.${system}.run {
+            src = ./.;
+            hooks = {
+              nixpkgs-fmt.enable = true;
+              rustfmt.enable = true;
+              typos.enable = true;
+              deadnix.enable = true;
+              statix.enable = true;
+              gitlint.enable = true;
+            };
+          };
+
           # Build the crate as part of `nix flake check` for convenience
           inherit usbvfiod;
 
@@ -134,6 +139,8 @@
         devShells.default = craneLib.devShell {
           # Inherit inputs from checks.
           checks = self.checks.${system};
+
+          inherit (self.checks.${system}.pre-commit-check) shellHook;
 
           # Additional dev-shell environment variables can be set directly
           # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
