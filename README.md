@@ -76,3 +76,12 @@ can use:
 ```console
 $ taplo format file.toml
 ```
+
+### Temporarily Ignoring Pre-Commit Checks
+
+When committing incomplete or work-in-progress changes, the pre-commit
+checks can become annoying. In this case, use:
+
+```console
+$ git commit --no-verify
+```
