@@ -24,7 +24,7 @@
     };
 
     git-hooks.url = "github:cachix/git-hooks.nix";
-    git-hooks.inputs.systems.follows = "systems";
+    git-hooks.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = { self, nixpkgs, crane, fenix, flake-utils, advisory-db, git-hooks, ... }:
