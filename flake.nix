@@ -32,7 +32,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        inherit (pkgs) lib;
+        inherit (nixpkgs) lib;
 
         craneLib = crane.mkLib pkgs;
         src = craneLib.cleanCargoSource ./.;
@@ -58,6 +58,10 @@
         # artifacts from above.
         usbvfiod = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
+
+          meta = {
+            mainProgram = "usbvfiod";
+          };
         });
       in
       {
@@ -122,7 +126,10 @@
             partitionType = "count";
             cargoNextestPartitionsExtraArgs = "--no-tests=pass";
           });
-        };
+        } // (import ./nix/tests.nix {
+          inherit lib pkgs;
+          usbvfiod = self.packages.${system}.default;
+        });
 
         packages = {
           default = usbvfiod;
