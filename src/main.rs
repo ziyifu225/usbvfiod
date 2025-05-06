@@ -1,4 +1,5 @@
 mod cli;
+mod memory_segment;
 mod xhci_backend;
 
 use anyhow::{Context, Result};
