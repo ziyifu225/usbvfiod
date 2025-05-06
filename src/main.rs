@@ -1,7 +1,7 @@
 mod cli;
 mod xhci_backend;
 
-pub(crate) use anyhow::{Context, Result};
+use anyhow::{Context, Result};
 use clap::Parser;
 use cli::Cli;
 use tracing::{info, Level};
