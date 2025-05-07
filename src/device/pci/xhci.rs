@@ -9,7 +9,8 @@ use crate::device::{
     bus::{BusDeviceRef, Request, SingleThreadedBusDevice},
     pci::{
         config_space::{ConfigSpace, ConfigSpaceBuilder},
-        traits::{PciDevice, RequestKind},
+        constants::xhci::{offset, OP_BASE, RUN_BASE},
+        traits::PciDevice,
     },
 };
 
@@ -53,14 +54,48 @@ impl PciDevice for Mutex<XhciController> {
         self.lock().unwrap().config_space.read(req)
     }
 
-    fn try_io_write(&self, _kind: RequestKind, _req: Request, _value: u64) -> Option<()> {
-        // TODO The try_io_write and try_io_read interfaces don't work
-        // very well to implement a vfio-user backend. We need another
-        // kind of interface.
-        todo!()
+    fn write_io(&self, region: u32, req: Request, value: u64) {
+        // The XHCI Controller has a single MMIO BAR.
+        assert_eq!(region, 0);
+
+        match req.addr {
+            offset::USBCMD => match value {
+                val if val & 0x1 == 0 => (), /* stop */
+                _ => todo!(),
+            },
+            offset::CONFIG => todo!(),
+            _ => todo!(),
+        }
     }
 
-    fn try_io_read(&self, _kind: RequestKind, _req: Request) -> Option<u64> {
-        todo!()
+    fn read_io(&self, region: u32, req: Request) -> u64 {
+        // The XHCI Controller has a single MMIO BAR.
+        assert_eq!(region, 0);
+
+        match req.addr {
+            // xHC Capability Registers
+            offset::CAPLENGTH => OP_BASE,
+            offset::HCIVERSION => 0x100, /* BCD encoded 1.0.0 */
+            offset::HCSPARAMS1 => {
+                (1 << 24/* max ports */) | (1 << 8/* max intrs */) | (1/* max slots */)
+            }
+            offset::HCSPARAMS2 => 0,
+            offset::HCSPARAMS3 => 0,
+            offset::HCCPARAMS1 => 0,
+            offset::DBOFF => 0x2000,
+            offset::RTSOFF => RUN_BASE,
+            offset::HCCPARAMS2 => 0,
+
+            // xHC Operational Registers
+            offset::USBCMD => 0,
+            offset::USBSTS => 0x1,   /* HCHalted */
+            offset::PAGESIZE => 0x1, /* 4k Pages */
+            offset::CONFIG => 0,     /* No device slots enabled */
+
+            // xHC Runtime Registers
+
+            // Everything else is Reserved Zero
+            _ => todo!(),
+        }
     }
 }
