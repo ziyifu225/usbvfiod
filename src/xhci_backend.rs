@@ -1,4 +1,7 @@
-use std::{fs::File, sync::Mutex};
+use std::{
+    fs::File,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Result;
 use tracing::{info, trace};
@@ -10,12 +13,15 @@ use vfio_bindings::bindings::vfio::{
 use vfio_user::{IrqInfo, ServerBackend};
 
 use usbvfiod::device::{
-    bus::{Request, RequestSize},
+    bus::{Bus, Request, RequestSize},
     pci::{traits::PciDevice, xhci::XhciController},
 };
 
+use crate::memory_segment::MemorySegment;
+
 #[derive(Debug, Default)]
 pub struct XhciBackend {
+    dma_bus: Bus,
     device: Mutex<XhciController>,
 }
 
@@ -131,6 +137,14 @@ impl ServerBackend for XhciBackend {
 
         // TODO We need to collect these guest memory fragments and
         // populate the `Bus` we pass to `XhciController`.
+
+        if let Some(fd) = fd {
+            let mseg = MemorySegment::new_from_fd(&fd, offset, size, flags.try_into().unwrap())?;
+
+            self.dma_bus.add(address, Arc::new(mseg)).unwrap();
+        } else {
+            todo!("Memory region without file descriptor");
+        }
 
         Ok(())
     }
