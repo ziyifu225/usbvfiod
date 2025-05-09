@@ -125,15 +125,12 @@ impl ServerBackend for XhciBackend {
         offset: u64,
         address: u64,
         size: u64,
-        fd: Option<&File>,
+        fd: Option<File>,
     ) -> Result<(), std::io::Error> {
         info!("dma_map flags = {flags:?} offset = {offset} address = {address} size = {size} fd = {fd:?}");
 
         // TODO We need to collect these guest memory fragments and
         // populate the `Bus` we pass to `XhciController`.
-
-        // TODO Poke upstream to merge a critical bug fix:
-        // https://github.com/rust-vmm/vfio-user/pull/34
 
         Ok(())
     }
