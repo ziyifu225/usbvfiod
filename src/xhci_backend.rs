@@ -13,21 +13,26 @@ use vfio_bindings::bindings::vfio::{
 use vfio_user::{IrqInfo, ServerBackend};
 
 use usbvfiod::device::{
-    bus::{Bus, Request, RequestSize},
+    bus::{Request, RequestSize},
     pci::{traits::PciDevice, xhci::XhciController},
 };
 
-use crate::memory_segment::MemorySegment;
+use crate::{dynamic_bus::DynamicBus, memory_segment::MemorySegment};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct XhciBackend {
-    dma_bus: Bus,
+    dma_bus: Arc<DynamicBus>,
     device: Mutex<XhciController>,
 }
 
 impl XhciBackend {
     pub fn new() -> Self {
-        Default::default()
+        let dma_bus: Arc<DynamicBus> = Default::default();
+
+        Self {
+            device: Mutex::new(XhciController::new(dma_bus.clone())),
+            dma_bus: Arc::new(DynamicBus::new()),
+        }
     }
 }
 
@@ -134,9 +139,6 @@ impl ServerBackend for XhciBackend {
         fd: Option<File>,
     ) -> Result<(), std::io::Error> {
         info!("dma_map flags = {flags:?} offset = {offset} address = {address} size = {size} fd = {fd:?}");
-
-        // TODO We need to collect these guest memory fragments and
-        // populate the `Bus` we pass to `XhciController`.
 
         if let Some(fd) = fd {
             let mseg = MemorySegment::new_from_fd(&fd, offset, size, flags.try_into().unwrap())?;

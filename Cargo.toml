@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { version = "1.0.97", default-features = false, features = ["std"] }
+arc-swap = "1.7.1"
 clap = { version = "4.5.35", features = [
   "cargo",
   "color",

@@ -1,4 +1,5 @@
 mod cli;
+mod dynamic_bus;
 mod memory_segment;
 mod xhci_backend;
 
