@@ -63,8 +63,9 @@ pub struct MemorySegment {
 impl MemorySegment {
     /// Creates a memory segment from a file.
     ///
-    /// The file is only used for mapping and will not be read or
-    /// written to.
+    /// The `File` object is only used for memory-mapping and will not
+    /// be read or written to. We only access the underlying file via
+    /// the memory mapping.
     pub fn new_from_fd(
         fd: &File,
         file_offset: u64,
