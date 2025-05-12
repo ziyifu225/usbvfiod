@@ -22,6 +22,9 @@ let
         # Enable debug verbosity.
         boot.consoleLogLevel = 7;
 
+        # Convenience packages for interactive use
+        environment.systemPackages = [ pkgs.pciutils pkgs.usbutils ];
+
         # Silence the useless stateVersion warning. We have no state to keep.
         system.stateVersion = config.system.nixos.release;
       })
