@@ -9,7 +9,7 @@ use crate::device::{
     bus::{BusDeviceRef, Request, SingleThreadedBusDevice},
     pci::{
         config_space::{ConfigSpace, ConfigSpaceBuilder},
-        constants::xhci::{offset, OP_BASE, RUN_BASE},
+        constants::xhci::{capability, offset, OP_BASE, RUN_BASE},
         traits::PciDevice,
     },
 };
@@ -75,10 +75,8 @@ impl PciDevice for Mutex<XhciController> {
         match req.addr {
             // xHC Capability Registers
             offset::CAPLENGTH => OP_BASE,
-            offset::HCIVERSION => 0x100, /* BCD encoded 1.0.0 */
-            offset::HCSPARAMS1 => {
-                (1 << 24/* max ports */) | (1 << 8/* max intrs */) | (1/* max slots */)
-            }
+            offset::HCIVERSION => capability::HCIVERSION,
+            offset::HCSPARAMS1 => capability::HCSPARAMS1,
             offset::HCSPARAMS2 => 0,
             offset::HCSPARAMS3 => 0,
             offset::HCCPARAMS1 => 0,
