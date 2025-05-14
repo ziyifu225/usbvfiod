@@ -87,8 +87,17 @@ impl ServerBackend for XhciBackend {
         let value: u64 = match region {
             VFIO_PCI_CONFIG_REGION_INDEX => self.device.read_cfg(Request::new(
                 offset,
-                RequestSize::try_from(data.len() as u64).unwrap(),
+                RequestSize::try_from(data.len() as u64).expect("should use valid request size"),
             )),
+
+            0 => self.device.read_io(
+                0,
+                Request::new(
+                    offset,
+                    RequestSize::try_from(data.len() as u64)
+                        .expect("should use valid request size"),
+                ),
+            ),
 
             _ => !0u64,
         };
@@ -104,11 +113,19 @@ impl ServerBackend for XhciBackend {
         offset: u64,
         data: &[u8],
     ) -> Result<(), std::io::Error> {
-        trace!("write region {region} offset {offset:#x}+{}", data.len());
+        trace!(
+            "write region {region} offset {offset:#x}+{} val {:?}",
+            data.len(),
+            data
+        );
 
         match region {
             VFIO_PCI_CONFIG_REGION_INDEX => self.device.write_cfg(
-                Request::new(offset, RequestSize::try_from(data.len() as u64).unwrap()),
+                Request::new(
+                    offset,
+                    RequestSize::try_from(data.len() as u64)
+                        .expect("should use valid request size"),
+                ),
                 match data.len() {
                     1 => data[0].into(),
                     2 => {
@@ -124,6 +141,27 @@ impl ServerBackend for XhciBackend {
                 },
             ),
 
+            0 => self.device.write_io(
+                0,
+                Request::new(
+                    offset,
+                    RequestSize::try_from(data.len() as u64)
+                        .expect("should use valid request size"),
+                ),
+                match data.len() {
+                    1 => data[0].into(),
+                    2 => {
+                        let val: [u8; 2] = data.try_into().unwrap();
+                        u16::from_le_bytes(val).into()
+                    }
+
+                    4 => {
+                        let val: [u8; 4] = data.try_into().unwrap();
+                        u32::from_le_bytes(val).into()
+                    }
+                    _ => todo!(),
+                },
+            ),
             _ => todo!(),
         }
 

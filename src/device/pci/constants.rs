@@ -201,3 +201,45 @@ pub mod config_space {
         }
     }
 }
+
+/// Constants related to the XHCI MMIO space.
+pub mod xhci {
+
+    /// Value for the operational base as returned for reading CAPLENGTH.
+    pub const OP_BASE: u64 = 0x68;
+    /// Runtime register base offset.
+    pub const RUN_BASE: u64 = 0x3000;
+
+    /// Offsets of various fields from the start of the XHCI MMIO region.
+    pub mod offset {
+        /// Capability Register Offsets
+        pub const CAPLENGTH: u64 = 0x0;
+        pub const HCIVERSION: u64 = 0x2;
+        pub const HCSPARAMS1: u64 = 0x4;
+        pub const HCSPARAMS2: u64 = 0x8;
+        pub const HCSPARAMS3: u64 = 0xc;
+        pub const HCCPARAMS1: u64 = 0x10;
+        pub const DBOFF: u64 = 0x14;
+        pub const RTSOFF: u64 = 0x18;
+        pub const HCCPARAMS2: u64 = 0x1c;
+
+        /// Operational Register Offsets
+        pub const USBCMD: u64 = super::OP_BASE;
+        pub const USBSTS: u64 = super::OP_BASE + 0x4;
+        pub const PAGESIZE: u64 = super::OP_BASE + 0x8;
+        pub const CONFIG: u64 = super::OP_BASE + 0x38;
+
+        /// Runtime Register Offsets
+        pub const IMAN: u64 = super::RUN_BASE;
+        pub const IMOD: u64 = super::RUN_BASE + 0x4;
+        pub const ERSTSZ: u64 = super::RUN_BASE + 0x8;
+        pub const ERSTBA: u64 = super::RUN_BASE + 0x10;
+        pub const ERDB: u64 = super::RUN_BASE + 0x18;
+    }
+
+    /// Constants for the capability register.
+    pub mod capability {}
+
+    /// Constants for the operational registers.
+    pub mod operational {}
+}

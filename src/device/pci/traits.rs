@@ -54,34 +54,21 @@ pub trait PciDevice: Debug {
 
     /// Write a value to an I/O region.
     ///
-    /// The device may or may not claim the request. If the request is claimed, this function
-    /// returns `Some(())` otherwise `None`.
-    ///
-    /// A device that only claims requests via standard BARs can use
-    /// [`try_match_bar`](super::config_space::ConfigSpace::try_match_bar) to implement this function.
-    ///
     /// # Parameters
     ///
-    /// - `kind`: Specifies the type of request.
+    /// - `region`: Identifies the targeted I/O region (BAR).
     /// - `req`: The offset and size of the request. Offsets are relative to the beginning of each
     ///          I/O region.
     /// - `value`: The value to be written.
-    #[must_use]
-    fn try_io_write(&self, kind: RequestKind, req: Request, value: u64) -> Option<()>;
+    fn write_io(&self, region: u32, req: Request, value: u64);
 
     /// Read a value from an I/O region.
     ///
-    /// The device may or may not claim the request. If the request is claimed, this function
-    /// returns `Some(value)` otherwise `None`.
-    ///
-    /// A device that only claims requests via standard BARs can use
-    /// [`try_match_bar`](super::config_space::ConfigSpace::try_match_bar) to implement this function.
-    ///
     /// # Parameters
     ///
-    /// - `kind`: Specifies the type of request.
+    /// - `region`: Identifies the targeted I/O region (BAR).
     /// - `req`: The offset and size of the request. Offsets are relative to the beginning of each
     ///          I/O region.
     #[must_use]
-    fn try_io_read(&self, kind: RequestKind, req: Request) -> Option<u64>;
+    fn read_io(&self, region: u32, req: Request) -> u64;
 }
