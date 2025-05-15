@@ -15,6 +15,13 @@ use crate::device::{
     },
 };
 
+/// A Basic Event Ring.
+#[derive(Debug, Default, Clone)]
+pub struct EventRing {
+    base_address: u64,
+    dequeue_pointer: u64,
+}
+
 /// The emulation of a XHCI controller.
 #[derive(Debug, Clone)]
 pub struct XhciController {
@@ -34,7 +41,10 @@ pub struct XhciController {
     /// Internal Command Ring position.
     command_ring_dequeue_pointer: u64,
 
-    /// Intrernal Consumer Cycle State for the next TRB.
+    /// The Event Ring of the single Interrupt Register Set.
+    event_ring: EventRing,
+
+    /// Internal Consumer Cycle State for the next TRB fetch.
     consumer_cycle_state: bool,
 
     /// Configured device slots.
@@ -65,6 +75,7 @@ impl XhciController {
             command_ring_running: false,
             command_ring_dequeue_pointer: 0,
             consumer_cycle_state: false,
+            event_ring: EventRing::default(),
             slots: vec![],
             device_contexts: vec![],
         }
@@ -89,6 +100,12 @@ impl XhciController {
         u64::try_from(self.slots.len()).unwrap() & 0x8u64
     }
 
+    /// Obtain the Event Ring Segment Table Base Address.
+    #[must_use]
+    pub fn event_ring_base_address(&self) -> u64 {
+        self.event_ring.base_address
+    }
+
     /// Enable device slots.
     pub fn enable_slots(&mut self, count: u64) {
         assert!(count <= MAX_SLOTS);
@@ -108,6 +125,21 @@ impl XhciController {
         self.device_contexts.push(device_context_base_array_ptr);
     }
 
+    /// Configure the Event Ring Segment Table from the base address.
+    pub fn configure_event_ring_segment_table(&mut self, erstba: u64) {
+        assert_eq!(erstba & 0x3f, 0, "unaligned event ring base address");
+
+        self.event_ring.base_address = erstba;
+
+        debug!("event ring segment table at {:#x}", erstba);
+    }
+
+    /// Handle writes to the Event Ring Dequeue Pointer (ERDP).
+    pub fn update_event_ring(&mut self, value: u64) {
+        debug!("event ring dequeue pointer advanced to {:#x}", value);
+        self.event_ring.dequeue_pointer = value;
+    }
+
     /// Handle Command Ring Control Register (CRCR) updates.
     pub fn update_command_ring(&mut self, value: u64) {
         if self.command_ring_running {
@@ -125,7 +157,7 @@ impl XhciController {
             let dequeue_ptr = value & crcr::DEQUEUE_POINTER_MASK;
             if self.command_ring_dequeue_pointer != dequeue_ptr {
                 debug!(
-                    "updating internal dequeue ptr from {:#x} to {:#x}",
+                    "updating command ring dequeue ptr from {:#x} to {:#x}",
                     self.command_ring_dequeue_pointer, dequeue_ptr
                 );
                 self.command_ring_dequeue_pointer = dequeue_ptr;
@@ -150,6 +182,7 @@ impl PciDevice for Mutex<XhciController> {
         assert_eq!(region, 0);
 
         match req.addr {
+            // xHC Operational Registers
             offset::USBCMD => match value {
                 val if val & 0x1 == 0 => (), /* stop */
                 _ => todo!(),
@@ -159,6 +192,16 @@ impl PciDevice for Mutex<XhciController> {
             offset::DCBAAP => self.lock().unwrap().configure_device_contexts(value),
             offset::DCBAAP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::CONFIG => self.lock().unwrap().enable_slots(value),
+
+            // xHC Runtime Registers
+            offset::ERSTSZ => assert_eq!(value, 1, "only a single segment supported"),
+            offset::ERSTBA => self
+                .lock()
+                .unwrap()
+                .configure_event_ring_segment_table(value),
+            offset::ERSTBA_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
+            offset::ERDP => self.lock().unwrap().update_event_ring(value),
+            offset::ERDP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             _ => todo!(),
         }
     }
@@ -172,7 +215,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::CAPLENGTH => OP_BASE,
             offset::HCIVERSION => capability::HCIVERSION,
             offset::HCSPARAMS1 => capability::HCSPARAMS1,
-            offset::HCSPARAMS2 => 0,
+            offset::HCSPARAMS2 => 0, /* ERST Max size is a single segment */
             offset::HCSPARAMS3 => 0,
             offset::HCCPARAMS1 => 0,
             offset::DBOFF => 0x2000,
@@ -188,6 +231,9 @@ impl PciDevice for Mutex<XhciController> {
             offset::CONFIG => self.lock().unwrap().config(),
 
             // xHC Runtime Registers
+            offset::ERSTSZ => 1,
+            offset::ERSTBA => self.lock().unwrap().event_ring_base_address(),
+            offset::ERSTBA_HI => 0,
 
             // Everything else is Reserved Zero
             _ => todo!(),
