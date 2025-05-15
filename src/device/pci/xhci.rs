@@ -217,10 +217,14 @@ impl PciDevice for Mutex<XhciController> {
             offset::HCSPARAMS1 => capability::HCSPARAMS1,
             offset::HCSPARAMS2 => 0, /* ERST Max size is a single segment */
             offset::HCSPARAMS3 => 0,
-            offset::HCCPARAMS1 => 0,
+            offset::HCCPARAMS1 => capability::HCCPARAMS1,
             offset::DBOFF => 0x2000,
             offset::RTSOFF => RUN_BASE,
             offset::HCCPARAMS2 => 0,
+
+            // xHC Extended Capability ("Supported Protocols Capability")
+            offset::SUPPORTED_PROTOCOLS => capability::supported_protocols::CAP_INFO,
+            offset::SUPPORTED_PROTOCOLS_CONFIG => capability::supported_protocols::CONFIG,
 
             // xHC Operational Registers
             offset::USBCMD => 0,
