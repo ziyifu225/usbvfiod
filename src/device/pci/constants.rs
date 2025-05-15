@@ -237,6 +237,7 @@ pub mod xhci {
         pub const USBCMD: u64 = super::OP_BASE;
         pub const USBSTS: u64 = super::OP_BASE + 0x4;
         pub const PAGESIZE: u64 = super::OP_BASE + 0x8;
+        pub const DNCTL: u64 = super::OP_BASE + 0x14;
         pub const CRCR: u64 = super::OP_BASE + 0x18;
         pub const CRCR_HI: u64 = super::OP_BASE + 0x1c;
         pub const DCBAAP: u64 = super::OP_BASE + 0x30;

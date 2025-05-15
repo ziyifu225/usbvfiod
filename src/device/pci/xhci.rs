@@ -187,6 +187,7 @@ impl PciDevice for Mutex<XhciController> {
                 val if val & 0x1 == 0 => (), /* stop */
                 _ => todo!(),
             },
+            offset::DNCTL => assert_eq!(value, 2, "debug notifications not supported"),
             offset::CRCR => self.lock().unwrap().update_command_ring(value),
             offset::CRCR_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::DCBAAP => self.lock().unwrap().configure_device_contexts(value),
@@ -229,6 +230,7 @@ impl PciDevice for Mutex<XhciController> {
             // xHC Operational Registers
             offset::USBCMD => 0,
             offset::USBSTS => self.lock().unwrap().status(),
+            offset::DNCTL => 2,
             offset::CRCR => self.lock().unwrap().command_ring_status(),
             offset::CRCR_HI => 0,
             offset::PAGESIZE => 0x1, /* 4k Pages */
