@@ -229,10 +229,15 @@ pub mod xhci {
         pub const RTSOFF: u64 = 0x18;
         pub const HCCPARAMS2: u64 = 0x1c;
 
+        /// Extended Capabilities
+        pub const SUPPORTED_PROTOCOLS: u64 = 0x20;
+        pub const SUPPORTED_PROTOCOLS_CONFIG: u64 = 0x28;
+
         /// Operational Register Offsets
         pub const USBCMD: u64 = super::OP_BASE;
         pub const USBSTS: u64 = super::OP_BASE + 0x4;
         pub const PAGESIZE: u64 = super::OP_BASE + 0x8;
+        pub const DNCTL: u64 = super::OP_BASE + 0x14;
         pub const CRCR: u64 = super::OP_BASE + 0x18;
         pub const CRCR_HI: u64 = super::OP_BASE + 0x1c;
         pub const DCBAAP: u64 = super::OP_BASE + 0x30;
@@ -265,6 +270,16 @@ pub mod xhci {
         pub const HCIVERSION: u64 = 0x100;
         pub const HCSPARAMS1: u64 =
             (super::MAX_PORTS << 24) | (super::MAX_INTRS << 8) | super::MAX_SLOTS;
+        pub const HCCPARAMS1: u64 = super::offset::SUPPORTED_PROTOCOLS << 14;
+
+        pub mod supported_protocols {
+            const ID: u64 = 2;
+            const MAJOR: u64 = 0x03;
+            const MINOR: u64 = 0x20;
+            const NEXT: u64 = 0;
+            pub const CAP_INFO: u64 = ID | (MAJOR << 24) | (MINOR << 16) | (NEXT << 8);
+            pub const CONFIG: u64 = 1 | (super::super::MAX_PORTS << 8);
+        }
     }
 
     /// Constants for the operational registers.

@@ -187,6 +187,7 @@ impl PciDevice for Mutex<XhciController> {
                 val if val & 0x1 == 0 => (), /* stop */
                 _ => todo!(),
             },
+            offset::DNCTL => assert_eq!(value, 2, "debug notifications not supported"),
             offset::CRCR => self.lock().unwrap().update_command_ring(value),
             offset::CRCR_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::DCBAAP => self.lock().unwrap().configure_device_contexts(value),
@@ -217,14 +218,19 @@ impl PciDevice for Mutex<XhciController> {
             offset::HCSPARAMS1 => capability::HCSPARAMS1,
             offset::HCSPARAMS2 => 0, /* ERST Max size is a single segment */
             offset::HCSPARAMS3 => 0,
-            offset::HCCPARAMS1 => 0,
+            offset::HCCPARAMS1 => capability::HCCPARAMS1,
             offset::DBOFF => 0x2000,
             offset::RTSOFF => RUN_BASE,
             offset::HCCPARAMS2 => 0,
 
+            // xHC Extended Capability ("Supported Protocols Capability")
+            offset::SUPPORTED_PROTOCOLS => capability::supported_protocols::CAP_INFO,
+            offset::SUPPORTED_PROTOCOLS_CONFIG => capability::supported_protocols::CONFIG,
+
             // xHC Operational Registers
             offset::USBCMD => 0,
             offset::USBSTS => self.lock().unwrap().status(),
+            offset::DNCTL => 2,
             offset::CRCR => self.lock().unwrap().command_ring_status(),
             offset::CRCR_HI => 0,
             offset::PAGESIZE => 0x1, /* 4k Pages */
