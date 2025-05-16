@@ -209,6 +209,12 @@ pub mod xhci {
     pub const OP_BASE: u64 = 0x68;
     /// Runtime register base offset.
     pub const RUN_BASE: u64 = 0x3000;
+    /// Maximum number of supported ports.
+    pub const MAX_PORTS: u64 = 1;
+    /// Maximum number of supported interrupter register sets.
+    pub const MAX_INTRS: u64 = 1;
+    /// Maximum number of supported device slots.
+    pub const MAX_SLOTS: u64 = 1;
 
     /// Offsets of various fields from the start of the XHCI MMIO region.
     pub mod offset {
@@ -227,19 +233,47 @@ pub mod xhci {
         pub const USBCMD: u64 = super::OP_BASE;
         pub const USBSTS: u64 = super::OP_BASE + 0x4;
         pub const PAGESIZE: u64 = super::OP_BASE + 0x8;
+        pub const CRCR: u64 = super::OP_BASE + 0x18;
+        pub const CRCR_HI: u64 = super::OP_BASE + 0x1c;
+        pub const DCBAAP: u64 = super::OP_BASE + 0x30;
+        pub const DCBAAP_HI: u64 = super::OP_BASE + 0x34;
         pub const CONFIG: u64 = super::OP_BASE + 0x38;
 
+        /// Per Port Operational Register Offsets
+        pub const PORTSC: u64 = super::OP_BASE + 0x400; /* +(0x10 * (portnr-1)) */
+        pub const PORTPMSC: u64 = super::OP_BASE + 0x404;
+        pub const PORTLI: u64 = super::OP_BASE + 408;
+
         /// Runtime Register Offsets
-        pub const IMAN: u64 = super::RUN_BASE;
-        pub const IMOD: u64 = super::RUN_BASE + 0x4;
-        pub const ERSTSZ: u64 = super::RUN_BASE + 0x8;
-        pub const ERSTBA: u64 = super::RUN_BASE + 0x10;
-        pub const ERDB: u64 = super::RUN_BASE + 0x18;
+        pub const MFINDEX: u64 = super::RUN_BASE;
+
+        /// Per Interruptor Runtime Register Offsets
+        pub const IR0: u64 = super::RUN_BASE + 0x20;
+
+        pub const IMAN: u64 = IR0;
+        pub const IMOD: u64 = IR0 + 0x4;
+        pub const ERSTSZ: u64 = IR0 + 0x8;
+        pub const ERSTBA: u64 = IR0 + 0x10;
+        pub const ERSTBA_HI: u64 = IR0 + 0x14;
+        pub const ERDP: u64 = IR0 + 0x18;
+        pub const ERDP_HI: u64 = IR0 + 0x1c;
     }
 
     /// Constants for the capability register.
-    pub mod capability {}
+    pub mod capability {
+        /// We only emulate version 1.0.0 of the XHCI spec for simplicity.
+        pub const HCIVERSION: u64 = 0x100;
+        pub const HCSPARAMS1: u64 =
+            (super::MAX_PORTS << 24) | (super::MAX_INTRS << 8) | super::MAX_SLOTS;
+    }
 
     /// Constants for the operational registers.
-    pub mod operational {}
+    pub mod operational {
+        pub mod crcr {
+            pub const DEQUEUE_POINTER_MASK: u64 = !0x3fu64;
+            pub const RCS: u64 = 0x1;
+            pub const CS: u64 = 0x2;
+            pub const CA: u64 = 0x4;
+        }
+    }
 }
