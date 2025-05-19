@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 
 use vfio_bindings::bindings::vfio::{
     vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS,
@@ -64,7 +64,7 @@ impl XhciBackend {
         for index in 0..VFIO_PCI_NUM_IRQS {
             let irq = IrqInfo {
                 index,
-                count: 0,
+                count: !index,
                 flags: 0,
             };
 
@@ -204,12 +204,17 @@ impl ServerBackend for XhciBackend {
 
     fn set_irqs(
         &mut self,
-        _index: u32,
-        _flags: u32,
-        _start: u32,
-        _count: u32,
-        _fds: Vec<File>,
+        index: u32,
+        flags: u32,
+        start: u32,
+        count: u32,
+        fds: Vec<File>,
     ) -> Result<(), std::io::Error> {
-        todo!()
+        debug!(
+            "set IRQs: {index} flags: {flags:#x} start: {start:#x} count: {count:#x} #fds: {}",
+            fds.len()
+        );
+
+        Ok(())
     }
 }
