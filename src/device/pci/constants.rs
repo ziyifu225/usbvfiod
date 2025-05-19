@@ -291,4 +291,10 @@ pub mod xhci {
             pub const CA: u64 = 0x4;
         }
     }
+
+    /// Constants for the runtime registers.
+    pub mod runtime {
+        /// The default minimum interrupt interval of ~1ms (4000 * 250ns).
+        pub const IMOD_DEFAULT: u64 = 4000;
+    }
 }
