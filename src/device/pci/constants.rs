@@ -206,7 +206,7 @@ pub mod config_space {
 pub mod xhci {
 
     /// Value for the operational base as returned for reading CAPLENGTH.
-    pub const OP_BASE: u64 = 0x68;
+    pub const OP_BASE: u64 = 0x40;
     /// Runtime register base offset.
     pub const RUN_BASE: u64 = 0x3000;
     /// Maximum number of supported ports.
