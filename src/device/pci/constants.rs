@@ -206,7 +206,7 @@ pub mod config_space {
 pub mod xhci {
 
     /// Value for the operational base as returned for reading CAPLENGTH.
-    pub const OP_BASE: u64 = 0x68;
+    pub const OP_BASE: u64 = 0x40;
     /// Runtime register base offset.
     pub const RUN_BASE: u64 = 0x3000;
     /// Maximum number of supported ports.
@@ -290,5 +290,11 @@ pub mod xhci {
             pub const CS: u64 = 0x2;
             pub const CA: u64 = 0x4;
         }
+    }
+
+    /// Constants for the runtime registers.
+    pub mod runtime {
+        /// The default minimum interrupt interval of ~1ms (4000 * 250ns).
+        pub const IMOD_DEFAULT: u64 = 4000;
     }
 }

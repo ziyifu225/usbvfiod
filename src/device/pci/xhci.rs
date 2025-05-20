@@ -10,7 +10,9 @@ use crate::device::{
     bus::{BusDeviceRef, Request, SingleThreadedBusDevice},
     pci::{
         config_space::{ConfigSpace, ConfigSpaceBuilder},
-        constants::xhci::{capability, offset, operational::crcr, MAX_SLOTS, OP_BASE, RUN_BASE},
+        constants::xhci::{
+            capability, offset, operational::crcr, runtime, MAX_INTRS, MAX_SLOTS, OP_BASE, RUN_BASE,
+        },
         traits::PciDevice,
     },
 };
@@ -53,6 +55,12 @@ pub struct XhciController {
     /// Device Context Array
     /// TODO: currently just the raw pointer configured by the OS
     device_contexts: Vec<u64>,
+
+    /// Interrupt management register
+    interrupt_management: u64,
+
+    /// The minimum interval in 250ns increments between interrupts.
+    interrupt_moderation_interval: u64,
 }
 
 impl XhciController {
@@ -70,6 +78,8 @@ impl XhciController {
                 .class(class::SERIAL, subclass::SERIAL_USB, progif::USB_XHCI)
                 // TODO Should be a 64-bit BAR.
                 .mem32_nonprefetchable_bar(0, 4 * 0x1000)
+                .mem32_nonprefetchable_bar(3, 2 * 0x1000)
+                .msix_capability(MAX_INTRS.try_into().unwrap(), 3, 0, 3, 0x1000)
                 .config_space(),
             running: false,
             command_ring_running: false,
@@ -78,6 +88,8 @@ impl XhciController {
             event_ring: EventRing::default(),
             slots: vec![],
             device_contexts: vec![],
+            interrupt_management: 0,
+            interrupt_moderation_interval: runtime::IMOD_DEFAULT,
         }
     }
 
@@ -98,12 +110,6 @@ impl XhciController {
     #[must_use]
     pub fn config(&self) -> u64 {
         u64::try_from(self.slots.len()).unwrap() & 0x8u64
-    }
-
-    /// Obtain the Event Ring Segment Table Base Address.
-    #[must_use]
-    pub fn event_ring_base_address(&self) -> u64 {
-        self.event_ring.base_address
     }
 
     /// Enable device slots.
@@ -138,6 +144,18 @@ impl XhciController {
     pub fn update_event_ring(&mut self, value: u64) {
         debug!("event ring dequeue pointer advanced to {:#x}", value);
         self.event_ring.dequeue_pointer = value;
+    }
+
+    /// Start/Stop controller operation
+    ///
+    /// This is called for writes of the `USBCMD` register.
+    pub fn run(&mut self, usbcmd: u64) {
+        self.running = usbcmd & 0x1 == 0x1;
+        if self.running {
+            debug!("controller started with cmd {usbcmd:#x}");
+        } else {
+            debug!("controller stopped with cmd {usbcmd:#x}");
+        }
     }
 
     /// Handle Command Ring Control Register (CRCR) updates.
@@ -183,10 +201,7 @@ impl PciDevice for Mutex<XhciController> {
 
         match req.addr {
             // xHC Operational Registers
-            offset::USBCMD => match value {
-                val if val & 0x1 == 0 => (), /* stop */
-                _ => todo!(),
-            },
+            offset::USBCMD => self.lock().unwrap().run(value),
             offset::DNCTL => assert_eq!(value, 2, "debug notifications not supported"),
             offset::CRCR => self.lock().unwrap().update_command_ring(value),
             offset::CRCR_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
@@ -195,6 +210,8 @@ impl PciDevice for Mutex<XhciController> {
             offset::CONFIG => self.lock().unwrap().enable_slots(value),
 
             // xHC Runtime Registers
+            offset::IMAN => self.lock().unwrap().interrupt_management = value,
+            offset::IMOD => self.lock().unwrap().interrupt_moderation_interval = value,
             offset::ERSTSZ => assert_eq!(value, 1, "only a single segment supported"),
             offset::ERSTBA => self
                 .lock()
@@ -237,9 +254,13 @@ impl PciDevice for Mutex<XhciController> {
             offset::CONFIG => self.lock().unwrap().config(),
 
             // xHC Runtime Registers
+            offset::IMAN => self.lock().unwrap().interrupt_management,
+            offset::IMOD => self.lock().unwrap().interrupt_moderation_interval,
             offset::ERSTSZ => 1,
-            offset::ERSTBA => self.lock().unwrap().event_ring_base_address(),
+            offset::ERSTBA => self.lock().unwrap().event_ring.base_address,
             offset::ERSTBA_HI => 0,
+            offset::ERDP => self.lock().unwrap().event_ring.dequeue_pointer,
+            offset::ERDP_HI => 0,
 
             // Everything else is Reserved Zero
             _ => todo!(),
