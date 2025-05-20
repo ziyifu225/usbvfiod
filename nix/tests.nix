@@ -87,13 +87,15 @@ in
       };
     };
 
+    # The nested CI runs are really slow.
+    globalTimeout = 3600;
     testScript = ''
       start_all()
 
       machine.wait_for_unit("cloud-hypervisor.service")
 
       # Check whether the USB controller pops up.
-      machine.wait_until_succeeds("grep -Fq 'usb usb1: Product: xHCI Host Controller' ${cloudHypervisorLog}")
+      machine.wait_until_succeeds("grep -Fq 'usb usb1: Product: xHCI Host Controller' ${cloudHypervisorLog}", timeout=3000)
       machine.wait_until_succeeds("grep -Fq 'hub 1-0:1.0: 1 port detected' ${cloudHypervisorLog}")
     '';
   };
