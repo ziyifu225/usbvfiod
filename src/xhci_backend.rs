@@ -64,7 +64,7 @@ impl XhciBackend {
         for index in 0..VFIO_PCI_NUM_IRQS {
             let irq = IrqInfo {
                 index,
-                count: !index,
+                count: 1,
                 flags: 0,
             };
 
