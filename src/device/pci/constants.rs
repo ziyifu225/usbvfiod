@@ -247,7 +247,7 @@ pub mod xhci {
         /// Per Port Operational Register Offsets
         pub const PORTSC: u64 = super::OP_BASE + 0x400; /* +(0x10 * (portnr-1)) */
         pub const PORTPMSC: u64 = super::OP_BASE + 0x404;
-        pub const PORTLI: u64 = super::OP_BASE + 408;
+        pub const PORTLI: u64 = super::OP_BASE + 0x408;
 
         /// Runtime Register Offsets
         pub const MFINDEX: u64 = super::RUN_BASE;
@@ -289,6 +289,23 @@ pub mod xhci {
             pub const RCS: u64 = 0x1;
             pub const CS: u64 = 0x2;
             pub const CA: u64 = 0x4;
+        }
+
+        pub mod portsc {
+            /// Port power should always be enabled.
+            /// Software can only disable it.
+            const PP: u64 = 1 << 9;
+            const PLS_RXDETECT: u64 = 0x5 << 5;
+
+            /// Generate system wake-on events for device connect.
+            const WCE: u64 = 1 << 25;
+            /// Generate system wake-on events for device disconnect.
+            const WDE: u64 = 1 << 26;
+            /// Generate system wake-on events for over-current conditions.
+            const WOE: u64 = 1 << 27;
+            pub const WAKE_ON_EVENTS: u64 = WCE | WDE | WOE;
+
+            pub const DEFAULT: u64 = PP | PLS_RXDETECT;
         }
     }
 
