@@ -1,10 +1,11 @@
 use std::{
     fs::File,
+    path::Path,
     sync::{Arc, Mutex},
 };
 
-use anyhow::Result;
-use tracing::{debug, info, trace};
+use anyhow::{Context, Result};
+use tracing::{debug, info, trace, warn};
 
 use vfio_bindings::bindings::vfio::{
     vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS,
@@ -26,13 +27,54 @@ pub struct XhciBackend {
 }
 
 impl XhciBackend {
-    pub fn new() -> Self {
+    /// Create a new virtual XHCI controller with the given USB
+    /// devices attached at creation time.
+    pub fn new<I>(devices: I) -> Result<Self>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<Path>,
+    {
         let dma_bus: Arc<DynamicBus> = Default::default();
 
-        Self {
+        let backend = Self {
             device: Mutex::new(XhciController::new(dma_bus.clone())),
             dma_bus: Arc::new(DynamicBus::new()),
+        };
+
+        for device in devices {
+            backend.add_device_from_path(device)?;
         }
+
+        Ok(backend)
+    }
+
+    /// Add a USB device to the virtual XHCI controller.
+    fn add_device(&self, device: nusb::Device) -> Result<()> {
+        // The configuration is not super interesting, but as long as
+        // we don't do anything else here this serves as a way to see
+        // whether the file is actually a USB device.
+        let active_configuration = device
+            .active_configuration()
+            .context("Failed to query active configuration")?;
+
+        debug!("Device configuration: {active_configuration:?}");
+
+        // TODO Actually add the device to the XHCI controller.
+        warn!("Adding devices is not implemented yet.");
+
+        Ok(())
+    }
+
+    /// Add a USB device via its path in `/dev/bus/usb`.
+    pub fn add_device_from_path(&self, path: impl AsRef<Path>) -> Result<()> {
+        let path: &Path = path.as_ref();
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .with_context(|| format!("Failed to open USB device file: {}", path.display()))?;
+
+        self.add_device(nusb::Device::from_fd(file.into())?)
     }
 }
 

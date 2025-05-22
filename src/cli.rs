@@ -36,6 +36,14 @@ pub struct Cli {
     /// usbvfiod. This option is mutually exclusive with --fd.
     #[arg(long, required_unless_present = "fd")]
     socket_path: Option<PathBuf>,
+
+    /// Path to a USB device to be attached from VM boot. Can be
+    /// specified multiple times to attach more devices. The path must
+    /// point to a device in: /dev/bus/usb
+    ///
+    /// See the documentation for how to identify devices.
+    #[arg(long = "device", value_name = "PATH")]
+    pub devices: Vec<PathBuf>,
 }
 
 /// The location of the server socket for the vfio-user client connection.

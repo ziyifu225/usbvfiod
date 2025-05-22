@@ -27,7 +27,8 @@ fn main() -> Result<()> {
     // Log messages from the log crate as well.
     tracing_log::LogTracer::init()?;
 
-    let mut backend = xhci_backend::XhciBackend::new();
+    let mut backend = xhci_backend::XhciBackend::new(&args.devices)
+        .context("Failed to create virtual XHCI controller")?;
 
     let server = if let cli::ServerSocket::Path(socket_path) = args.server_socket() {
         Server::new(socket_path, true, backend.irqs(), backend.regions())
