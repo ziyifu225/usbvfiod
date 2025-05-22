@@ -10,9 +10,9 @@ VMMs might also work, but but are currently not the main target.
 This project is still under active development and **not usable
 yet**. We are planning to work on this project in the following order:
 
-1. **Validating our Assumptions** (🚧 **Ongoing** 🚧)
+1. **Validating our Assumptions** (Done)
    - We are looking for suitable libraries to use and finalize our design.
-2. **Towards USB Storage Passthrough**
+2. **Towards USB Storage Passthrough** (🚧 **Ongoing** 🚧)
    - We build up a virtual XHCI controller and the necessary plumbing
      to pass-through USB devices from the host.
    - Our initial test target will be USB storage devices.
