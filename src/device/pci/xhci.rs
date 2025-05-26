@@ -167,6 +167,12 @@ impl XhciController {
         self.running = usbcmd & 0x1 == 0x1;
         if self.running {
             debug!("controller started with cmd {usbcmd:#x}");
+
+            // XXX: This is just a test to see if we can generate interrupts.
+            // This will be removed once we generate interrupts in the right
+            // place, (e.g. generate a Port Connect Status Event) and test it.
+            self.interrupt_line.interrupt();
+            debug!("signalled a bogus interrupt");
         } else {
             debug!("controller stopped with cmd {usbcmd:#x}");
         }

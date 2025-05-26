@@ -25,6 +25,23 @@ let
         # Convenience packages for interactive use
         environment.systemPackages = [ pkgs.pciutils pkgs.usbutils ];
 
+        # Add user services that run on automatic login.
+        systemd.user.services = {
+          dump-diagnostics = {
+            description = "Dump diagnostic information";
+            wantedBy = [ "default.target" ];
+
+            serviceConfig = {
+              ExecStart = pkgs.writeShellScript "diagnostic-dump" ''
+                echo Dumping Diagnostics
+                cat /proc/interrupts
+              '';
+              StandardOutput = "journal+console";
+              StandardError = "journal+console";
+            };
+          };
+        };
+
         # Silence the useless stateVersion warning. We have no state to keep.
         system.stateVersion = config.system.nixos.release;
       })
@@ -98,6 +115,9 @@ in
       # Check whether the USB controller pops up.
       machine.wait_until_succeeds("grep -Fq 'usb usb1: Product: xHCI Host Controller' ${cloudHypervisorLog}", timeout=3000)
       machine.wait_until_succeeds("grep -Fq 'hub 1-0:1.0: 1 port detected' ${cloudHypervisorLog}")
+
+      # Read the diagnostic information after login.
+      machine.wait_until_succeeds("grep -Eq '\s+1\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
     '';
   };
 }
