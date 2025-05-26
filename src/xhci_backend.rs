@@ -8,8 +8,8 @@ use anyhow::{Context, Result};
 use tracing::{debug, info, trace, warn};
 
 use vfio_bindings::bindings::vfio::{
-    vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS,
-    VFIO_REGION_INFO_FLAG_READ, VFIO_REGION_INFO_FLAG_WRITE,
+    vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_MSIX_IRQ_INDEX, VFIO_PCI_NUM_IRQS,
+    VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ, VFIO_REGION_INFO_FLAG_WRITE,
 };
 use vfio_user::{IrqInfo, ServerBackend};
 
@@ -102,18 +102,16 @@ impl XhciBackend {
 
     /// Return a list of IRQs for [`vfio_user::Server::new`].
     pub fn irqs(&self) -> Vec<IrqInfo> {
-        let mut irqs = Vec::with_capacity(VFIO_PCI_NUM_IRQS as usize);
-        for index in 0..VFIO_PCI_NUM_IRQS {
-            let irq = IrqInfo {
+        (0..VFIO_PCI_NUM_IRQS)
+            .map(|index| IrqInfo {
                 index,
-                count: 1,
+                count: match index {
+                    VFIO_PCI_MSIX_IRQ_INDEX => 1,
+                    _ => 0,
+                },
                 flags: 0,
-            };
-
-            irqs.push(irq);
-        }
-
-        irqs
+            })
+            .collect()
     }
 }
 
