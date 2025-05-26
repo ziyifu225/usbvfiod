@@ -1,5 +1,6 @@
 use std::{
     fs::File,
+    io::Write,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -15,6 +16,7 @@ use vfio_user::{IrqInfo, ServerBackend};
 
 use usbvfiod::device::{
     bus::{Request, RequestSize},
+    interrupt_line::{DummyInterruptLine, InterruptLine},
     pci::{traits::PciDevice, xhci::XhciController},
 };
 
@@ -24,6 +26,27 @@ use crate::{dynamic_bus::DynamicBus, memory_segment::MemorySegment};
 pub struct XhciBackend {
     dma_bus: Arc<DynamicBus>,
     controller: Mutex<XhciController>,
+}
+
+#[derive(Debug)]
+struct InterruptEventFd {
+    /// TODO: Get rid of the Mutex. Writes to the EventFd are safe.
+    ///  This just satisfies the Send + Sync requirements and provides
+    ///  interior mutability for the [`InterruptLine`] trait.
+    fd: Mutex<File>,
+}
+
+impl InterruptLine for InterruptEventFd {
+    fn interrupt(&self) {
+        // Write any 8 byte value to the EventFd.
+        // TODO: we just expect this to always work currently.
+        let _amount = self
+            .fd
+            .lock()
+            .unwrap()
+            .write(&1u64.to_le_bytes())
+            .expect("should always be able to write event fd");
+    }
 }
 
 impl XhciBackend {
@@ -254,6 +277,27 @@ impl ServerBackend for XhciBackend {
             "set IRQs: {index} flags: {flags:#x} start: {start:#x} count: {count:#x} #fds: {}",
             fds.len()
         );
+        assert_eq!(
+            index, VFIO_PCI_MSIX_IRQ_INDEX,
+            "Only MSI-X interrupts are supported"
+        );
+        assert!(count <= 1, "Only a single interrupt is supported");
+
+        let irqs: Vec<Arc<InterruptEventFd>> = fds
+            .into_iter()
+            .map(|file| {
+                Arc::new(InterruptEventFd {
+                    fd: Mutex::new(file),
+                })
+            })
+            .collect();
+
+        let irq: Arc<dyn InterruptLine> = match irqs.first() {
+            Some(eventfd) => eventfd.clone(),
+            _ => Arc::new(DummyInterruptLine::default()),
+        };
+
+        self.controller.lock().unwrap().connect_irq(irq);
 
         Ok(())
     }
