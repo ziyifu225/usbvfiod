@@ -23,7 +23,7 @@ use crate::{dynamic_bus::DynamicBus, memory_segment::MemorySegment};
 #[derive(Debug)]
 pub struct XhciBackend {
     dma_bus: Arc<DynamicBus>,
-    device: Mutex<XhciController>,
+    controller: Mutex<XhciController>,
 }
 
 impl XhciBackend {
@@ -34,11 +34,11 @@ impl XhciBackend {
         I: IntoIterator,
         I::Item: AsRef<Path>,
     {
-        let dma_bus: Arc<DynamicBus> = Default::default();
+        let dma_bus = Arc::new(DynamicBus::new());
 
         let backend = Self {
-            device: Mutex::new(XhciController::new(dma_bus.clone())),
-            dma_bus: Arc::new(DynamicBus::new()),
+            controller: Mutex::new(XhciController::new(dma_bus.clone())),
+            dma_bus,
         };
 
         for device in devices {
@@ -127,12 +127,12 @@ impl ServerBackend for XhciBackend {
         trace!("read  region {region} offset {offset:#x}+{}", data.len());
 
         let value: u64 = match region {
-            VFIO_PCI_CONFIG_REGION_INDEX => self.device.read_cfg(Request::new(
+            VFIO_PCI_CONFIG_REGION_INDEX => self.controller.read_cfg(Request::new(
                 offset,
                 RequestSize::try_from(data.len() as u64).expect("should use valid request size"),
             )),
 
-            0 => self.device.read_io(
+            0 => self.controller.read_io(
                 0,
                 Request::new(
                     offset,
@@ -162,7 +162,7 @@ impl ServerBackend for XhciBackend {
         );
 
         match region {
-            VFIO_PCI_CONFIG_REGION_INDEX => self.device.write_cfg(
+            VFIO_PCI_CONFIG_REGION_INDEX => self.controller.write_cfg(
                 Request::new(
                     offset,
                     RequestSize::try_from(data.len() as u64)
@@ -183,7 +183,7 @@ impl ServerBackend for XhciBackend {
                 },
             ),
 
-            0 => self.device.write_io(
+            0 => self.controller.write_io(
                 0,
                 Request::new(
                     offset,
