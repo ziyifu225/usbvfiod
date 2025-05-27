@@ -1,0 +1,4 @@
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c077", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="258a", ATTR{idProduct}=="002a", MODE="0666", TAG+="uaccess"
+
+SUBSYSTEM=="usb", ATTR{idVendor}=="2717", ATTR{idProduct}=="5013", GROUP="users", TAG+="uaccess"
