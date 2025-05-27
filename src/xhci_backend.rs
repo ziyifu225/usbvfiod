@@ -34,11 +34,11 @@ impl XhciBackend {
         I: IntoIterator,
         I::Item: AsRef<Path>,
     {
-        let dma_bus: Arc<DynamicBus> = Default::default();
+        let dma_bus = Arc::new(DynamicBus::new());
 
         let backend = Self {
             device: Mutex::new(XhciController::new(dma_bus.clone())),
-            dma_bus: Arc::new(DynamicBus::new()),
+            dma_bus,
         };
 
         for device in devices {
