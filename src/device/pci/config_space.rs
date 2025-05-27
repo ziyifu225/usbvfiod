@@ -318,13 +318,13 @@ impl ConfigSpaceBuilder {
         assert_eq!(pba_bar_offset & 0x3, 0);
 
         // The size of the Pending Bit Array in full bytes.
-        let pba_bytes = (u32::from(msix_count) + 7) / 8;
+        let pba_bytes = u32::from(msix_count).div_ceil(8);
 
         assert!(self.has_bar(
             pba_bar_no,
             RequestKind::Memory,
             // The PBA size must be rounded to 8 byte.
-            pba_bar_offset + (pba_bytes + 7) / 8
+            pba_bar_offset + pba_bytes.div_ceil(8)
         ));
 
         let msix_cap: RegisterSet<10> = RegisterSetBuilder::<10>::new()
