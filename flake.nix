@@ -146,7 +146,20 @@
           # Inherit inputs from checks.
           checks = self.checks.${system};
 
-          inherit (self.checks.${system}.pre-commit-check) shellHook;
+          # inherit (self.checks.${system}.pre-commit-check) shellHook;
+
+          shellHook = ''
+
+            # Added: Hot load udev rules #
+            echo ">>> Hot loading udev rules: udev_rules/99-usbvfiod.rules -> /run/udev/rules.d/99-usbvfiod.rules"
+            sudo cp $PWD/udev_rules/99-usbvfiod.rules /run/udev/rules.d/99-usbvfiod.rules
+            sudo udevadm control --reload
+            sudo udevadm trigger
+            echo ">>> udev rules are now active (runtime)"
+
+            # Original pre-commit-check.shellHook script 
+            ${self.checks.${system}.pre-commit-check.shellHook}
+          '';
 
           # Additional dev-shell environment variables can be set directly
           # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
