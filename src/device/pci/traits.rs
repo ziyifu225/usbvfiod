@@ -57,8 +57,7 @@ pub trait PciDevice: Debug {
     /// # Parameters
     ///
     /// - `region`: Identifies the targeted I/O region (BAR).
-    /// - `req`: The offset and size of the request. Offsets are relative to the beginning of each
-    ///          I/O region.
+    /// - `req`: The offset and size of the request. Offsets are relative to the beginning of each I/O region.
     /// - `value`: The value to be written.
     fn write_io(&self, region: u32, req: Request, value: u64);
 
@@ -67,8 +66,7 @@ pub trait PciDevice: Debug {
     /// # Parameters
     ///
     /// - `region`: Identifies the targeted I/O region (BAR).
-    /// - `req`: The offset and size of the request. Offsets are relative to the beginning of each
-    ///          I/O region.
+    /// - `req`: The offset and size of the request. Offsets are relative to the beginning of each I/O region.
     #[must_use]
     fn read_io(&self, region: u32, req: Request) -> u64;
 }
