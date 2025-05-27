@@ -55,6 +55,7 @@ in
     name = "usbvfiod Smoke Test";
 
     nodes.machine = { pkgs, ... }: {
+      boot.kernelModules = [ "kvm" ];
       systemd.services.usbvfiod = {
         wantedBy = [ "multi-user.target" ];
 
