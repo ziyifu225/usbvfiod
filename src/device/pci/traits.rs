@@ -12,6 +12,7 @@ use super::config_space::BarInfo;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestKind {
     /// A legacy x86 port I/O request. Usually made via `IN` or `OUT` instructions.
+    #[allow(unused)]
     PortIO,
 
     /// A MMIO request.
