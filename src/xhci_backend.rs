@@ -14,7 +14,7 @@ use vfio_bindings::bindings::vfio::{
 };
 use vfio_user::{IrqInfo, ServerBackend};
 
-use usbvfiod::device::{
+use crate::device::{
     bus::{Request, RequestSize},
     interrupt_line::{DummyInterruptLine, InterruptLine},
     pci::{traits::PciDevice, xhci::XhciController},
