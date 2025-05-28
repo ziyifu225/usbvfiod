@@ -21,7 +21,7 @@ const INITIAL_CAPABILITY_OFFSET: u8 = 0x40;
 
 /// Meta-information about a PCI BAR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct BarInfo {
+pub struct BarInfo {
     /// The size of the BAR in bytes.
     size: u32,
 
@@ -453,6 +453,7 @@ impl ConfigSpace {
     ///
     /// The resulting iterator returns the Configuration Space offset of each standard PCI
     /// capability.
+    #[allow(unused)]
     pub fn iter_capability_offsets(&self) -> impl Iterator<Item = u8> + '_ {
         CapabilityIterator {
             config_space: self,
@@ -460,6 +461,11 @@ impl ConfigSpace {
                 .try_into()
                 .unwrap(),
         }
+    }
+
+    /// Retrieve information about a specific BAR.
+    pub fn bar(&self, bar_no: u8) -> Option<BarInfo> {
+        self.bars.get(usize::from(bar_no)).and_then(|&b| b)
     }
 }
 
@@ -789,5 +795,21 @@ mod tests {
             cfg_space.read(Request::new(offsets[1].into(), RequestSize::Size1)),
             u64::from(example_id_2)
         );
+    }
+
+    #[test]
+    fn can_query_bars() {
+        let cfg_space = ConfigSpaceBuilder::new(0, 0)
+            .mem32_nonprefetchable_bar(0, 0x8000_0000)
+            .config_space();
+
+        assert_eq!(
+            cfg_space.bar(0),
+            Some(BarInfo {
+                size: 0x8000_0000,
+                kind: RequestKind::Memory
+            })
+        );
+        assert_eq!(cfg_space.bar(1), None);
     }
 }
