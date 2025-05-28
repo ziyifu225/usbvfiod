@@ -12,6 +12,6 @@
 pub mod bus;
 pub mod interrupt_line;
 pub mod interval;
-pub mod msi_receiver;
+pub mod msi_message;
 pub mod pci;
 pub mod register_set;

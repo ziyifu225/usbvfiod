@@ -5,7 +5,7 @@
 
 use crate::device::{
     bus::{Request, RequestSize, SingleThreadedBusDevice},
-    msi_receiver::MsiMessage,
+    msi_message::MsiMessage,
     pci::constants::config_space,
     register_set::{RegisterSet, RegisterSetBuilder},
 };
