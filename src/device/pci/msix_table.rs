@@ -76,6 +76,7 @@ impl<const SIZE_BYTES: usize> MsixTable<SIZE_BYTES> {
 
     /// Return the MSI address/data pair for the given vector.
     #[must_use]
+    #[allow(unused)]
     pub fn vector(&self, vector: u16) -> Option<MsiMessage> {
         assert!(vector < Self::vector_count());
 
