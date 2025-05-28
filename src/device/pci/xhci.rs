@@ -20,6 +20,8 @@ use crate::device::{
     },
 };
 
+use super::config_space::BarInfo;
+
 /// A Basic Event Ring.
 #[derive(Debug, Default, Clone)]
 pub struct EventRing {
@@ -294,5 +296,9 @@ impl PciDevice for Mutex<XhciController> {
             // Everything else is Reserved Zero
             _ => todo!(),
         }
+    }
+
+    fn bar(&self, bar_no: u8) -> Option<BarInfo> {
+        self.lock().unwrap().config_space.bar(bar_no)
     }
 }

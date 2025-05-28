@@ -9,8 +9,11 @@ use anyhow::{Context, Result};
 use tracing::{debug, info, trace, warn};
 
 use vfio_bindings::bindings::vfio::{
-    vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_MSIX_IRQ_INDEX, VFIO_PCI_NUM_IRQS,
-    VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ, VFIO_REGION_INFO_FLAG_WRITE,
+    vfio_region_info, VFIO_PCI_BAR0_REGION_INDEX, VFIO_PCI_BAR1_REGION_INDEX,
+    VFIO_PCI_BAR2_REGION_INDEX, VFIO_PCI_BAR3_REGION_INDEX, VFIO_PCI_BAR4_REGION_INDEX,
+    VFIO_PCI_BAR5_REGION_INDEX, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_MSIX_IRQ_INDEX,
+    VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ,
+    VFIO_REGION_INFO_FLAG_WRITE,
 };
 use vfio_user::{IrqInfo, ServerBackend};
 
@@ -105,20 +108,57 @@ impl XhciBackend {
     /// Return a list of regions for [`vfio_user::Server::new`].
     pub fn regions(&self) -> Vec<vfio_region_info> {
         (0..VFIO_PCI_NUM_REGIONS)
-            .map(|i| match i {
-                VFIO_PCI_CONFIG_REGION_INDEX => vfio_region_info {
+            .map(|i| {
+                let empty_region = vfio_region_info {
                     argsz: size_of::<vfio_region_info>() as u32,
                     index: i,
-                    size: 256,
-                    flags: VFIO_REGION_INFO_FLAG_READ | VFIO_REGION_INFO_FLAG_WRITE,
                     ..Default::default()
-                },
+                };
 
-                _ => vfio_region_info {
-                    argsz: size_of::<vfio_region_info>() as u32,
-                    index: i,
-                    ..Default::default()
-                },
+                match i {
+                    VFIO_PCI_CONFIG_REGION_INDEX => {
+                        debug!("Client queried config space region");
+
+                        vfio_region_info {
+                            argsz: size_of::<vfio_region_info>() as u32,
+                            index: i,
+                            size: 256,
+                            flags: VFIO_REGION_INFO_FLAG_READ | VFIO_REGION_INFO_FLAG_WRITE,
+                            ..Default::default()
+                        }
+                    }
+
+                    VFIO_PCI_BAR0_REGION_INDEX
+                    | VFIO_PCI_BAR1_REGION_INDEX
+                    | VFIO_PCI_BAR2_REGION_INDEX
+                    | VFIO_PCI_BAR3_REGION_INDEX
+                    | VFIO_PCI_BAR4_REGION_INDEX
+                    | VFIO_PCI_BAR5_REGION_INDEX => {
+                        let bar_no = i - VFIO_PCI_BAR0_REGION_INDEX;
+
+                        if let Some(bar_info) = u8::try_from(bar_no)
+                            .ok()
+                            .and_then(|bar_no| self.controller.bar(bar_no))
+                        {
+                            debug!("Client queried BAR{bar_no} region: {:?}", bar_info);
+                            vfio_region_info {
+                                argsz: size_of::<vfio_region_info>() as u32,
+                                index: i,
+                                size: bar_info.size.into(),
+                                flags: VFIO_REGION_INFO_FLAG_READ | VFIO_REGION_INFO_FLAG_WRITE,
+                                ..Default::default()
+                            }
+                        } else {
+                            debug!("Client queried BAR{bar_no} region: (empty)");
+                            empty_region
+                        }
+                    }
+
+                    unknown => {
+                        debug!("Client queried unknown VFIO region: {unknown}");
+                        empty_region
+                    }
+                }
             })
             .collect()
     }

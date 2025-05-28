@@ -6,6 +6,8 @@ use std::fmt::Debug;
 
 use crate::device::bus::Request;
 
+use super::config_space::BarInfo;
+
 /// The type of I/O region request for a PCI device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestKind {
@@ -51,6 +53,16 @@ pub trait PciDevice: Debug {
     ///
     /// `req`: The address and size of the request.
     fn read_cfg(&self, req: Request) -> u64;
+
+    /// Query the size and kind of a PCI BAR.
+    ///
+    /// The number and kind of BARs are not expected to change after
+    /// device creation. The caller can assume them to be constant.
+    ///
+    /// # Parameters
+    ///
+    /// `bar_no`: The number of the BAR to query.
+    fn bar(&self, bar_no: u8) -> Option<BarInfo>;
 
     /// Write a value to an I/O region.
     ///

@@ -23,10 +23,10 @@ const INITIAL_CAPABILITY_OFFSET: u8 = 0x40;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BarInfo {
     /// The size of the BAR in bytes.
-    size: u32,
+    pub size: u32,
 
     /// The type of requests this BAR matches.
-    kind: RequestKind,
+    pub kind: RequestKind,
 }
 
 impl BarInfo {
