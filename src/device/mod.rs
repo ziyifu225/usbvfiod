@@ -5,6 +5,7 @@
 
 #![deny(missing_docs)]
 #![deny(rustdoc::all)]
+#![allow(rustdoc::private_doc_tests)]
 #![deny(clippy::must_use_candidate)]
 #![deny(missing_debug_implementations)]
 
