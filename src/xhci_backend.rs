@@ -1,5 +1,6 @@
 use std::{
     fs::File,
+    io::Write,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -8,13 +9,14 @@ use anyhow::{Context, Result};
 use tracing::{debug, info, trace, warn};
 
 use vfio_bindings::bindings::vfio::{
-    vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS,
-    VFIO_REGION_INFO_FLAG_READ, VFIO_REGION_INFO_FLAG_WRITE,
+    vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_MSIX_IRQ_INDEX, VFIO_PCI_NUM_IRQS,
+    VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ, VFIO_REGION_INFO_FLAG_WRITE,
 };
 use vfio_user::{IrqInfo, ServerBackend};
 
 use usbvfiod::device::{
     bus::{Request, RequestSize},
+    interrupt_line::{DummyInterruptLine, InterruptLine},
     pci::{traits::PciDevice, xhci::XhciController},
 };
 
@@ -24,6 +26,27 @@ use crate::{dynamic_bus::DynamicBus, memory_segment::MemorySegment};
 pub struct XhciBackend {
     dma_bus: Arc<DynamicBus>,
     controller: Mutex<XhciController>,
+}
+
+#[derive(Debug)]
+struct InterruptEventFd {
+    /// TODO: Get rid of the Mutex. Writes to the EventFd are safe.
+    ///  This just satisfies the Send + Sync requirements and provides
+    ///  interior mutability for the [`InterruptLine`] trait.
+    fd: Mutex<File>,
+}
+
+impl InterruptLine for InterruptEventFd {
+    fn interrupt(&self) {
+        // Write any 8 byte value to the EventFd.
+        // TODO: we just expect this to always work currently.
+        let _amount = self
+            .fd
+            .lock()
+            .unwrap()
+            .write(&1u64.to_le_bytes())
+            .expect("should always be able to write event fd");
+    }
 }
 
 impl XhciBackend {
@@ -102,18 +125,16 @@ impl XhciBackend {
 
     /// Return a list of IRQs for [`vfio_user::Server::new`].
     pub fn irqs(&self) -> Vec<IrqInfo> {
-        let mut irqs = Vec::with_capacity(VFIO_PCI_NUM_IRQS as usize);
-        for index in 0..VFIO_PCI_NUM_IRQS {
-            let irq = IrqInfo {
+        (0..VFIO_PCI_NUM_IRQS)
+            .map(|index| IrqInfo {
                 index,
-                count: 1,
+                count: match index {
+                    VFIO_PCI_MSIX_IRQ_INDEX => 1,
+                    _ => 0,
+                },
                 flags: 0,
-            };
-
-            irqs.push(irq);
-        }
-
-        irqs
+            })
+            .collect()
     }
 }
 
@@ -256,6 +277,27 @@ impl ServerBackend for XhciBackend {
             "set IRQs: {index} flags: {flags:#x} start: {start:#x} count: {count:#x} #fds: {}",
             fds.len()
         );
+        assert_eq!(
+            index, VFIO_PCI_MSIX_IRQ_INDEX,
+            "Only MSI-X interrupts are supported"
+        );
+        assert!(count <= 1, "Only a single interrupt is supported");
+
+        let irqs: Vec<Arc<InterruptEventFd>> = fds
+            .into_iter()
+            .map(|file| {
+                Arc::new(InterruptEventFd {
+                    fd: Mutex::new(file),
+                })
+            })
+            .collect();
+
+        let irq: Arc<dyn InterruptLine> = match irqs.first() {
+            Some(eventfd) => eventfd.clone(),
+            _ => Arc::new(DummyInterruptLine::default()),
+        };
+
+        self.controller.lock().unwrap().connect_irq(irq);
 
         Ok(())
     }

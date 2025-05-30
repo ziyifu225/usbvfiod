@@ -9,6 +9,7 @@
 #![deny(missing_debug_implementations)]
 
 pub mod bus;
+pub mod interrupt_line;
 pub mod interval;
 pub mod msi_receiver;
 pub mod pci;

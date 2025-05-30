@@ -3,11 +3,12 @@
 //! The specification is available
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, warn};
 
 use crate::device::{
     bus::{BusDeviceRef, Request, SingleThreadedBusDevice},
+    interrupt_line::{DummyInterruptLine, InterruptLine},
     pci::{
         config_space::{ConfigSpace, ConfigSpaceBuilder},
         constants::xhci::{
@@ -63,6 +64,9 @@ pub struct XhciController {
 
     /// The minimum interval in 250ns increments between interrupts.
     interrupt_moderation_interval: u64,
+
+    /// The interrupt line triggered to signal device events.
+    interrupt_line: Arc<dyn InterruptLine>,
 }
 
 impl XhciController {
@@ -92,7 +96,15 @@ impl XhciController {
             device_contexts: vec![],
             interrupt_management: 0,
             interrupt_moderation_interval: runtime::IMOD_DEFAULT,
+            interrupt_line: Arc::new(DummyInterruptLine::default()),
         }
+    }
+
+    /// Configure the interrupt line for the controller.
+    ///
+    /// The [`XhciController`] uses this to issue interrupts for events.
+    pub fn connect_irq(&mut self, irq: Arc<dyn InterruptLine>) {
+        self.interrupt_line = irq.clone();
     }
 
     /// Obtain the current host controller status as defined for the `USBSTS` register.
@@ -155,6 +167,12 @@ impl XhciController {
         self.running = usbcmd & 0x1 == 0x1;
         if self.running {
             debug!("controller started with cmd {usbcmd:#x}");
+
+            // XXX: This is just a test to see if we can generate interrupts.
+            // This will be removed once we generate interrupts in the right
+            // place, (e.g. generate a Port Connect Status Event) and test it.
+            self.interrupt_line.interrupt();
+            debug!("signalled a bogus interrupt");
         } else {
             debug!("controller stopped with cmd {usbcmd:#x}");
         }
