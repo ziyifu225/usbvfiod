@@ -311,6 +311,7 @@ pub struct DefaultDevice {
 impl DefaultDevice {
     /// Construct a default device that spans the complete address space.
     #[must_use]
+    #[allow(unused)]
     pub fn new(name: &'static str) -> Self {
         DefaultDevice {
             size: u64::MAX,

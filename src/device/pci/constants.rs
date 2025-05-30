@@ -6,6 +6,8 @@
 
 // Allow missing docs to avoid duplicating the PCI spec for all constants.
 #![allow(missing_docs)]
+// Allow unused constants that might come in handy at some point.
+#![allow(unused)]
 
 /// The maximum number of busses on a PCI segment.
 pub const MAX_BUSES: usize = 256;

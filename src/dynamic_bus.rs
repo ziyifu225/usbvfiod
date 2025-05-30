@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use crate::device::bus::{AddBusDeviceError, Bus, BusDevice, BusDeviceRef, Request};
 use arc_swap::ArcSwap;
-use usbvfiod::device::bus::{AddBusDeviceError, Bus, BusDevice, BusDeviceRef, Request};
 
 #[derive(Debug)]
 struct DeviceEntry {
@@ -66,7 +66,7 @@ impl BusDevice for DynamicBus {
 
 #[cfg(test)]
 mod tests {
-    use usbvfiod::device::bus::RequestSize;
+    use crate::device::bus::RequestSize;
 
     use super::*;
 

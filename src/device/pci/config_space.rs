@@ -3,11 +3,8 @@
 //! This module contains helpers for creating and emulating a PCI Configuration Space. To construct
 //! a Configuration Space use [`ConfigSpaceBuilder`].
 
-use std::ops::Range;
-
 use crate::device::{
     bus::{Request, RequestSize, SingleThreadedBusDevice},
-    interval::Interval,
     register_set::{RegisterSet, RegisterSetBuilder},
 };
 
@@ -24,12 +21,12 @@ const INITIAL_CAPABILITY_OFFSET: u8 = 0x40;
 
 /// Meta-information about a PCI BAR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct BarInfo {
+pub struct BarInfo {
     /// The size of the BAR in bytes.
-    size: u32,
+    pub size: u32,
 
     /// The type of requests this BAR matches.
-    kind: RequestKind,
+    pub kind: RequestKind,
 }
 
 impl BarInfo {
@@ -128,6 +125,7 @@ impl ConfigSpaceBuilder {
     ///
     /// When not specified, the revision defaults to 0.
     #[must_use]
+    #[allow(unused)]
     pub fn revision(mut self, revision: u8) -> Self {
         self.revision = revision;
 
@@ -139,6 +137,7 @@ impl ConfigSpaceBuilder {
     /// The `subsystem_vendor_id` uses the same values as the normal PCI device [vendor
     /// ID](super::constants::config_space::vendor).
     #[must_use]
+    #[allow(unused)]
     pub fn subsystem(mut self, subsystem_vendor_id: u16, subsystem_id: u16) -> Self {
         self.reg_builder
             .u16_le_ro_at(offset::SUBSYSTEM_VENDOR_ID, subsystem_vendor_id)
@@ -151,6 +150,7 @@ impl ConfigSpaceBuilder {
     ///
     /// This is necessary for guests to probe additional functions on this device.
     #[must_use]
+    #[allow(unused)]
     pub fn multifunction(mut self) -> Self {
         self.multifunction = true;
         self
@@ -160,6 +160,7 @@ impl ConfigSpaceBuilder {
     ///
     /// When not specified, the interrupt pin defaults to 0 (None).
     #[must_use]
+    #[allow(unused)]
     pub fn interrupt_pin(mut self, irq_pin: u8) -> Self {
         self.interrupt_pin = irq_pin;
 
@@ -170,6 +171,7 @@ impl ConfigSpaceBuilder {
     ///
     /// When not specified, the interrupt line defaults to `0xff` (not connected).
     #[must_use]
+    #[allow(unused)]
     pub fn interrupt_line(mut self, irq_line: u8) -> Self {
         self.interrupt_line = irq_line;
 
@@ -181,6 +183,7 @@ impl ConfigSpaceBuilder {
     /// Do not use this function to re-define standard PCI Configuration Space fields. This function
     /// must also not be used when PCI capabilities have been added with
     /// [`capability`](Self::capability).
+    #[allow(unused)]
     pub fn custom_registers<F>(mut self, custom_regs_fn: F) -> Self
     where
         F: FnOnce(&mut RegisterSetBuilder<{ config_space::SIZE }>),
@@ -450,6 +453,7 @@ impl ConfigSpace {
     ///
     /// The resulting iterator returns the Configuration Space offset of each standard PCI
     /// capability.
+    #[allow(unused)]
     pub fn iter_capability_offsets(&self) -> impl Iterator<Item = u8> + '_ {
         CapabilityIterator {
             config_space: self,
@@ -459,38 +463,9 @@ impl ConfigSpace {
         }
     }
 
-    /// Match a request of a given kind against the BARs in this Configuration Space.
-    #[must_use]
-    pub fn try_match_bar(&self, kind: RequestKind, request: Request) -> Option<BarMatch> {
-        self.bars
-            .iter()
-            .enumerate()
-            // Remove all non-existing BARs.
-            .filter_map(|(idx, opt_bar)| opt_bar.map(|bar_info| (idx, bar_info)))
-            // We only want BARs of the right kind.
-            .filter(|(_, bar_info)| bar_info.kind == kind)
-            // And are only interested in their size.
-            .map(|(idx, bar_info)| (idx, bar_info.size))
-            // Extract the first matching BAR.
-            .find_map(|(idx, bar_size)| {
-                assert!(idx < MAX_BARS);
-                assert!(bar_size.is_power_of_two());
-
-                let request_range: Range<u64> = request.try_into().ok()?;
-                let bar_start = self.read(Request::new(
-                    (config_space::offset::BAR_0 + idx * 4).try_into().unwrap(),
-                    RequestSize::Size4,
-                )) & !u64::from(bar_size - 1);
-
-                (bar_start..(bar_start + u64::from(bar_size)))
-                    .contains_interval(&request_range)
-                    .then(|| BarMatch {
-                        request: Request::new(request.addr - bar_start, request.size),
-
-                        // This conversion is safe, because we range-check idx above.
-                        bar_no: u8::try_from(idx).unwrap(),
-                    })
-            })
+    /// Retrieve information about a specific BAR.
+    pub fn bar(&self, bar_no: u8) -> Option<BarInfo> {
+        self.bars.get(usize::from(bar_no)).and_then(|&b| b)
     }
 }
 
@@ -759,102 +734,6 @@ mod tests {
     }
 
     #[test]
-    fn bars_match_requests() {
-        const BAR_2_SIZE: u32 = 0x1000;
-        const BAR_2_ADDR: u32 = 0xABCD_E000;
-        const BAR_3_SIZE: u32 = 0x2000;
-        const BAR_3_ADDR: u32 = 0x0000_6000;
-
-        let mut cfg_space = ConfigSpaceBuilder::new(0, 0)
-            .mem32_nonprefetchable_bar(2, BAR_2_SIZE)
-            .mem32_nonprefetchable_bar(3, BAR_3_SIZE)
-            .config_space();
-
-        cfg_space.write(
-            Request::new(offset::BAR_2 as u64, RequestSize::Size4),
-            BAR_2_ADDR.into(),
-        );
-        cfg_space.write(
-            Request::new(offset::BAR_3 as u64, RequestSize::Size4),
-            BAR_3_ADDR.into(),
-        );
-
-        // Requests of different kinds do not match.
-        assert_eq!(
-            cfg_space.try_match_bar(
-                RequestKind::PortIO,
-                Request::new(BAR_3_ADDR.into(), RequestSize::Size1),
-            ),
-            None
-        );
-
-        // Requests that don't match, don't match. :)
-        for non_matching_address in [0, 0x1235, 0xffff_ffff] {
-            assert_eq!(
-                cfg_space.try_match_bar(
-                    RequestKind::Memory,
-                    Request::new(non_matching_address, RequestSize::Size1),
-                ),
-                None
-            );
-        }
-
-        // Matching requests match.
-        assert_eq!(
-            cfg_space.try_match_bar(
-                RequestKind::Memory,
-                Request::new((BAR_2_ADDR + 10).into(), RequestSize::Size1),
-            ),
-            Some(BarMatch {
-                request: Request::new(10, RequestSize::Size1),
-                bar_no: 2
-            })
-        );
-
-        assert_eq!(
-            cfg_space.try_match_bar(
-                RequestKind::Memory,
-                Request::new((BAR_3_ADDR + BAR_3_SIZE - 1).into(), RequestSize::Size1),
-            ),
-            Some(BarMatch {
-                request: Request::new((BAR_3_SIZE - 1).into(), RequestSize::Size1),
-                bar_no: 3
-            })
-        );
-    }
-
-    #[test]
-    fn bars_dont_match_split_requests() {
-        const BAR_2_SIZE: u32 = 0x1000;
-        const BAR_2_ADDR: u32 = 0xABCD_E000;
-
-        let mut cfg_space = ConfigSpaceBuilder::new(0, 0)
-            .mem32_nonprefetchable_bar(2, BAR_2_SIZE)
-            .config_space();
-
-        cfg_space.write(
-            Request::new(offset::BAR_2 as u64, RequestSize::Size4),
-            BAR_2_ADDR.into(),
-        );
-
-        assert_eq!(
-            cfg_space.try_match_bar(
-                RequestKind::Memory,
-                Request::new((BAR_2_ADDR - 2).into(), RequestSize::Size4)
-            ),
-            None
-        );
-
-        assert_eq!(
-            cfg_space.try_match_bar(
-                RequestKind::Memory,
-                Request::new((BAR_2_ADDR - BAR_2_SIZE - 2).into(), RequestSize::Size4)
-            ),
-            None
-        );
-    }
-
-    #[test]
     #[should_panic]
     fn can_only_refer_to_existing_bars_in_msix_cap() {
         let _ = ConfigSpaceBuilder::new(0, 0)
@@ -916,5 +795,21 @@ mod tests {
             cfg_space.read(Request::new(offsets[1].into(), RequestSize::Size1)),
             u64::from(example_id_2)
         );
+    }
+
+    #[test]
+    fn can_query_bars() {
+        let cfg_space = ConfigSpaceBuilder::new(0, 0)
+            .mem32_nonprefetchable_bar(0, 0x8000_0000)
+            .config_space();
+
+        assert_eq!(
+            cfg_space.bar(0),
+            Some(BarInfo {
+                size: 0x8000_0000,
+                kind: RequestKind::Memory
+            })
+        );
+        assert_eq!(cfg_space.bar(1), None);
     }
 }

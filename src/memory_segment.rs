@@ -9,8 +9,8 @@ use std::{
     },
 };
 
+use crate::device::bus::{BusDevice, Request, RequestSize};
 use memmap2::{Mmap, MmapMut, MmapOptions};
-use usbvfiod::device::bus::{BusDevice, Request, RequestSize};
 use vfio_user::DmaMapFlags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
