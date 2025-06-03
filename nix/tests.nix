@@ -17,6 +17,9 @@ let
           # The virtio-console is an option as well, but is not
           # compiled into the NixOS kernel and would be inconvenient.
           "console=ttyS0"
+          # Enable dyndbg messages for the XHCI driver.
+          "xhci_pci.dyndbg==pmfl"
+          "xhci_hcd.dyndbg==pmfl"
         ];
 
         # Enable debug verbosity.
