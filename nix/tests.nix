@@ -17,10 +17,13 @@ let
           # The virtio-console is an option as well, but is not
           # compiled into the NixOS kernel and would be inconvenient.
           "console=ttyS0"
+          # Enable dyndbg messages for the XHCI driver.
+          "xhci_pci.dyndbg==pmfl"
+          "xhci_hcd.dyndbg==pmfl"
         ];
 
         # Enable debug verbosity.
-        boot.consoleLogLevel = 7;
+        boot.consoleLogLevel = 8;
 
         # Convenience packages for interactive use
         environment.systemPackages = [ pkgs.pciutils pkgs.usbutils ];
@@ -66,6 +69,11 @@ let
   # well.
   usbvfiodSocket = "/tmp/usbvfio";
   cloudHypervisorLog = "/tmp/chv.log";
+
+  # Provide a raw file as usb stick test image.
+  usbDiskImage = pkgs.writeText "usb-stick-image.raw" ''
+    This is an uninitialized drive.
+  '';
 in
 {
   integration-smoke = pkgs.nixosTest {
@@ -102,6 +110,13 @@ in
       virtualisation = {
         cores = 2;
         memorySize = 4096;
+        qemu.options = [
+          # A virtual USB XHCI controller in the host ...
+          "-device qemu-xhci,id=host-xhci,addr=10"
+          # ... with an attached usb stick.
+          "-drive if=none,id=usbstick,format=raw,snapshot=on,file=${usbDiskImage}"
+          "-device usb-storage,bus=host-xhci.0,drive=usbstick"
+        ];
       };
     };
 
@@ -118,6 +133,9 @@ in
 
       # Read the diagnostic information after login.
       machine.wait_until_succeeds("grep -Eq '\s+1\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
+
+      # Check whether the virtual usb stick is available in the host.
+      machine.succeed('grep -Fq "uninitialized drive" /dev/sda')
     '';
   };
 }
