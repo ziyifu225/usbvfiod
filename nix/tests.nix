@@ -23,7 +23,7 @@ let
         ];
 
         # Enable debug verbosity.
-        boot.consoleLogLevel = 7;
+        boot.consoleLogLevel = 8;
 
         # Convenience packages for interactive use
         environment.systemPackages = [ pkgs.pciutils pkgs.usbutils ];
