@@ -3,7 +3,8 @@
 //! The specification is available
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
-use super::constants::xhci::rings::trb_types::*;
+use super::constants::xhci::rings::trb_types::{self, *};
+use core::fmt;
 
 /// Represents a TRB that the XHCI controller can place on the event ring.
 #[derive(Debug)]
@@ -185,6 +186,122 @@ pub enum CompletionCode {
     InvalidStreamIdError,
     SecondaryBandwidthError,
     SplitTransactionError,
+}
+
+/// Represents a TRB that the driver can place on the command ring.
+#[derive(Debug)]
+pub enum CommandTrb {
+    EnableSlotCommand,
+    DisableSlotCommand,
+    AddressDeviceCommand,
+    ConfigureEndpointCommand,
+    EvaluateContextCommand,
+    ResetEndpointCommand,
+    StopEndpointCommand,
+    SetTrDequeuePointerCommand,
+    ResetDeviceCommand,
+    ForceHeaderCommand,
+    NoOpCommand,
+    Link,
+}
+
+impl TryFrom<&[u8]> for CommandTrb {
+    type Error = TrbParseError;
+
+    /// Try to parse a TRB from a byte slice.
+    ///
+    /// # Limitations
+    ///
+    /// While this function can parse all available Command TRB types, it does
+    /// not parse all of them in full detail. If the function returns only the
+    /// enum variant without an associated struct, the parsing for the
+    /// particular command is not yet implemented. EnableSlotCommand is an
+    /// exception, because the TRB does not contain any additional information.
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let slice_size = bytes.len();
+        if slice_size != 16 {
+            return Err(TrbParseError::IncorrectSliceSize(slice_size));
+        }
+        let trb_type = bytes[13] >> 2;
+        let command_trb = match trb_type {
+            trb_types::LINK => CommandTrb::Link,
+            // EnableSlotCommand does not contain information apart from the
+            // type; thus, no further parsing is necessary and we can just
+            // return the enum variant.
+            trb_types::ENABLE_SLOT_COMMAND => CommandTrb::EnableSlotCommand,
+            trb_types::DISABLE_SLOT_COMMAND => CommandTrb::DisableSlotCommand,
+            trb_types::ADDRESS_DEVICE_COMMAND => CommandTrb::AddressDeviceCommand,
+            trb_types::CONFIGURE_ENDPOINT_COMMAND => CommandTrb::ConfigureEndpointCommand,
+            trb_types::EVALUATE_CONTEXT_COMMAND => CommandTrb::EvaluateContextCommand,
+            trb_types::RESET_ENDPOINT_COMMAND => CommandTrb::ResetEndpointCommand,
+            trb_types::STOP_ENDPOINT_COMMAND => CommandTrb::StopEndpointCommand,
+            trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => CommandTrb::SetTrDequeuePointerCommand,
+            trb_types::RESET_DEVICE_COMMAND => CommandTrb::ResetDeviceCommand,
+            trb_types::FORCE_EVENT_COMMAND => {
+                return Err(TrbParseError::UnsupportedOptionalCommand(
+                    18,
+                    "Force Event Command".to_string(),
+                ));
+            }
+            trb_types::NEGOTIATE_BANDWIDTH_COMMAND => {
+                return Err(TrbParseError::UnsupportedOptionalCommand(
+                    19,
+                    "Negotiate Bandwidth Command".to_string(),
+                ));
+            }
+            trb_types::SET_LATENCY_TOLERANCE_VALUE_COMMAND => {
+                return Err(TrbParseError::UnsupportedOptionalCommand(
+                    20,
+                    "Set Latency Tolerance Value Command".to_string(),
+                ));
+            }
+            trb_types::GET_PORT_BANDWIDTH_COMMAND => {
+                return Err(TrbParseError::UnsupportedOptionalCommand(
+                    21,
+                    "Get Port Bandwidth Command".to_string(),
+                ))
+            }
+
+            trb_types::FORCE_HEADER_COMMAND => CommandTrb::ForceHeaderCommand,
+            trb_types::NO_OP_COMMAND => CommandTrb::NoOpCommand,
+            trb_type => return Err(TrbParseError::UnknownTrbType(trb_type)),
+        };
+        Ok(command_trb)
+    }
+}
+
+/// Custom error type to represent errors in TRB parsing.
+#[derive(Debug)]
+pub enum TrbParseError {
+    IncorrectSliceSize(usize),
+    UnsupportedOptionalCommand(u8, String),
+    UnknownTrbType(u8),
+}
+
+impl std::error::Error for TrbParseError {}
+
+impl fmt::Display for TrbParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TrbParseError::IncorrectSliceSize(size) => {
+                write!(
+                            f,
+                            "A TRB always has a size of 16 bytes. Cannot parse TRB from a slice of {} bytes.",
+                            size
+                        )
+            }
+            TrbParseError::UnsupportedOptionalCommand(trb_type, cmd_name) => {
+                write!(
+                    f,
+                    "TRB type {} refers to \"{}\", which is optional and not supported.",
+                    trb_type, cmd_name
+                )
+            }
+            TrbParseError::UnknownTrbType(trb_type) => {
+                write!(f, "TRB type {} does not refer to any command.", trb_type)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
