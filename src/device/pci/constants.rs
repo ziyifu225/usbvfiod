@@ -316,4 +316,46 @@ pub mod xhci {
         /// The default minimum interrupt interval of ~1ms (4000 * 250ns).
         pub const IMOD_DEFAULT: u64 = 4000;
     }
+
+    /// Constants for the rings
+    pub mod rings {
+        /// The identifiers of transfer request blocks
+        pub mod trb_types {
+            pub const NORMAL: u8 = 1;
+            pub const SETUP_STAGE: u8 = 2;
+            pub const DATA_STAGE: u8 = 3;
+            pub const STATUS_STAGE: u8 = 4;
+            pub const ISOCH: u8 = 5;
+            pub const LINK: u8 = 6;
+            pub const EVENT_DATA: u8 = 7;
+            pub const NO_OP: u8 = 8;
+
+            pub const ENABLE_SLOT_COMMAND: u8 = 9;
+            pub const DISABLE_SLOT_COMMAND: u8 = 10;
+            pub const ADDRESS_DEVICE_COMMAND: u8 = 11;
+            pub const CONFIGURE_ENDPOINT_COMMAND: u8 = 12;
+            pub const EVALUATE_CONTEXT_COMMAND: u8 = 13;
+            pub const RESET_ENDPOINT_COMMAND: u8 = 14;
+            pub const STOP_ENDPOINT_COMMAND: u8 = 15;
+            pub const SET_TR_DEQUEUE_POINTER_COMMAND: u8 = 16;
+            pub const RESET_DEVICE_COMMAND: u8 = 17;
+            pub const FORCE_EVENT_COMMAND: u8 = 18;
+            pub const NEGOTIATE_BANDWIDTH_COMMAND: u8 = 19;
+            pub const SET_LATENCY_TOLERANCE_VALUE_COMMAND: u8 = 20;
+            pub const GET_PORT_BANDWIDTH_COMMAND: u8 = 21;
+            pub const FORCE_HEADER_COMMAND: u8 = 22;
+            pub const NO_OP_COMMAND: u8 = 23;
+            pub const GET_EXTENDED_PROPERTY_COMMAND: u8 = 24;
+            pub const SET_EXTENDED_PROPERTY_COMMAND: u8 = 25;
+
+            pub const TRANSFER_EVENT: u8 = 32;
+            pub const COMMAND_COMPLETION_EVENT: u8 = 33;
+            pub const PORT_STATUS_CHANGE_EVENT: u8 = 34;
+            pub const BANDWIDTH_REQUEST_EVENT: u8 = 35;
+            pub const DOORBELL_EVENT: u8 = 36;
+            pub const HOST_CONTROLLER_EVENT: u8 = 37;
+            pub const DEVICE_NOTIFICATION_EVENT: u8 = 38;
+            pub const MFINDEX_WRAP_EVENT: u8 = 39;
+        }
+    }
 }

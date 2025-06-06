@@ -3,6 +3,8 @@
 //! The specification is available
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
+use super::constants::xhci::rings::trb_types::*;
+
 /// Represents a TRB that the XHCI controller can place on the event ring.
 #[derive(Debug)]
 pub enum EventTrb {
@@ -95,13 +97,12 @@ impl EventTrb {
 
 impl CommandCompletionEventTrbData {
     fn to_bytes(&self) -> [u8; 16] {
-        let command_completion_event_id = 33;
         let mut trb = [0; 16];
 
         trb[0..8].copy_from_slice(&self.command_trb_pointer.to_le_bytes());
         trb[8..11].copy_from_slice(&self.command_completion_parameter.to_le_bytes()[0..3]);
         trb[11] = self.completion_code as u8;
-        trb[13] = command_completion_event_id << 2;
+        trb[13] = COMMAND_COMPLETION_EVENT << 2;
         trb[15] = self.slot_id;
 
         trb
@@ -133,12 +134,11 @@ impl EventTrb {
 
 impl PortStatusChangeEventTrbData {
     fn to_bytes(&self) -> [u8; 16] {
-        let port_status_change_event_id = 34;
         let mut bytes = [0; 16];
 
         bytes[3] = self.port_id;
         bytes[11] = CompletionCode::Success as u8;
-        bytes[13] = port_status_change_event_id << 2;
+        bytes[13] = PORT_STATUS_CHANGE_EVENT << 2;
 
         bytes
     }
