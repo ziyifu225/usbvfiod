@@ -186,3 +186,37 @@ pub enum CompletionCode {
     SecondaryBandwidthError,
     SplitTransactionError,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_command_completion_event_trb() {
+        let trb = EventTrb::new_command_completion_event_trb(
+            0x1122334455667780,
+            0xaabbcc,
+            CompletionCode::Success,
+            2,
+        );
+        assert_eq!(
+            [
+                0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0xcc, 0xbb, 0xaa, 0x01, 0x01, 0x84,
+                0x00, 0x02,
+            ],
+            trb.to_bytes(true),
+        )
+    }
+
+    #[test]
+    fn test_port_status_change_event_trb() {
+        let trb = EventTrb::new_port_status_change_event_trb(2);
+        assert_eq!(
+            [
+                0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x88,
+                0x00, 0x00,
+            ],
+            trb.to_bytes(true),
+        )
+    }
+}
