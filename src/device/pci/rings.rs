@@ -6,7 +6,10 @@
 
 use tracing::{debug, trace};
 
-use crate::device::bus::{BusDeviceRef, Request, RequestSize};
+use crate::device::{
+    bus::{BusDeviceRef, Request, RequestSize},
+    pci::constants::xhci::rings::event_ring::segments_table_entry_offsets::*,
+};
 
 use super::trb::EventTrb;
 
@@ -77,8 +80,8 @@ impl EventRing {
         assert_eq!(erstba & 0x3f, 0, "unaligned event ring base address");
 
         self.base_address = erstba;
-        self.enqueue_pointer = dma_bus.read(Request::new(erstba, RequestSize::Size8));
-        self.trb_count = dma_bus.read(Request::new(erstba + 8, RequestSize::Size4)) as u32;
+        self.enqueue_pointer = dma_bus.read(Request::new(erstba + BASE_ADDR, RequestSize::Size8));
+        self.trb_count = dma_bus.read(Request::new(erstba + SIZE, RequestSize::Size4)) as u32;
         self.cycle_state = true;
 
         debug!("event ring segment table is at {:#x}", erstba);

@@ -357,5 +357,13 @@ pub mod xhci {
             pub const DEVICE_NOTIFICATION_EVENT: u8 = 38;
             pub const MFINDEX_WRAP_EVENT: u8 = 39;
         }
+        /// Constants specific to the event rings
+        pub mod event_ring {
+            /// The offsets to fields in Event Ring Segment Table Entries (ERSTE)
+            pub mod segments_table_entry_offsets {
+                pub const BASE_ADDR: u64 = 0;
+                pub const SIZE: u64 = 8;
+            }
+        }
     }
 }
