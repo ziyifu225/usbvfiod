@@ -202,7 +202,7 @@ pub enum CommandTrb {
     ResetDeviceCommand,
     ForceHeaderCommand,
     NoOpCommand,
-    Link,
+    Link(LinkTrbData),
 }
 
 impl TryFrom<&[u8]> for CommandTrb {
@@ -224,7 +224,7 @@ impl TryFrom<&[u8]> for CommandTrb {
         }
         let trb_type = bytes[13] >> 2;
         let command_trb = match trb_type {
-            trb_types::LINK => CommandTrb::Link,
+            trb_types::LINK => CommandTrb::Link(LinkTrbData::parse(bytes)?),
             // EnableSlotCommand does not contain information apart from the
             // type; thus, no further parsing is necessary and we can just
             // return the enum variant.
@@ -272,10 +272,50 @@ impl TryFrom<&[u8]> for CommandTrb {
 
 /// Custom error type to represent errors in TRB parsing.
 #[derive(Debug)]
+pub struct LinkTrbData {
+    /// The address of the next ring segment.
+    pub ring_segment_pointer: u64,
+    /// The flag that indicates whether to toggle the cycle bit.
+    pub toggle_cycle: bool,
+}
+
+impl LinkTrbData {
+    /// Parse data of a Link TRB.
+    ///
+    /// Only `CommandTrb::try_from` should call this function. Thus, we make
+    /// the following assumptions to avoid duplicate checks:
+    ///
+    /// - `value` is a slice of size 16.
+    /// - The TRB type (upper 6 bit of byte 13) indicate a link TRB.
+    ///
+    /// # Limitations
+    ///
+    /// The function currently does not check if the slice respects all RsvdZ
+    /// fields.
+    fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+        let rsp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
+        let ring_segment_pointer = u64::from_le_bytes(rsp_bytes);
+        let toggle_cycle = trb_bytes[12] & 0x2 != 0;
+
+        // the lowest for bit of the pointer are RsvdZ to ensure 16-byte
+        // alignment.
+        if ring_segment_pointer & 0xf != 0 {
+            return Err(TrbParseError::RsvdZViolation);
+        }
+
+        Ok(LinkTrbData {
+            ring_segment_pointer,
+            toggle_cycle,
+        })
+    }
+}
+
+#[derive(Debug)]
 pub enum TrbParseError {
     IncorrectSliceSize(usize),
     UnsupportedOptionalCommand(u8, String),
     UnknownTrbType(u8),
+    RsvdZViolation,
 }
 
 impl std::error::Error for TrbParseError {}
@@ -286,7 +326,7 @@ impl fmt::Display for TrbParseError {
             TrbParseError::IncorrectSliceSize(size) => {
                 write!(
                             f,
-                            "A TRB always has a size of 16 bytes. Cannot parse TRB from a slice of {} bytes.",
+                            "Cannot parse TRB from a slice of {} bytes. A TRB always has a size of 16 bytes.",
                             size
                         )
             }
@@ -299,6 +339,9 @@ impl fmt::Display for TrbParseError {
             }
             TrbParseError::UnknownTrbType(trb_type) => {
                 write!(f, "TRB type {} does not refer to any command.", trb_type)
+            }
+            TrbParseError::RsvdZViolation => {
+                write!(f, "Detected a non-zero value in a RsvdZ field")
             }
         }
     }
@@ -324,6 +367,35 @@ mod tests {
         } else {
             panic!(
                 "A TRB with TRB type 9 should result in a CommandTrb::EnableSlotCommand. Got instead: {:?}",
+                trb
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_link_trb() {
+        let trb_bytes = [
+            0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
+            0x00, 0x00,
+        ];
+        let trb_result = CommandTrb::try_from(&trb_bytes[..]);
+        assert!(
+            trb_result.is_ok(),
+            "A valid TRB byte representation should be parsed successfully."
+        );
+        let trb = trb_result.unwrap();
+        if let CommandTrb::Link(link_data) = trb {
+            assert_eq!(
+                0x1122334455667780, link_data.ring_segment_pointer,
+                "link_segment_pointer was parsed incorrectly."
+            );
+            assert!(
+                link_data.toggle_cycle,
+                "toggle_cycle bit was parsed incorrectly."
+            );
+        } else {
+            panic!(
+                "A TRB with TRB type 6 should result in a CommandTrb::Link. Got instead: {:?}",
                 trb
             );
         }
