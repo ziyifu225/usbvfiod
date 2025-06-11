@@ -123,6 +123,7 @@ impl<const SIZE: usize> RegisterSetBuilder<SIZE> {
 
     /// Place a 8-bit write-one-clear (W1C) value at the given position. Bits flip to zero when they
     /// are written with a 1.
+    #[allow(unused)]
     pub fn u8_w1c_at(&mut self, pos: usize, value: u8) -> &mut Self {
         self.init_u8(pos, value, 0, 0xFF);
         self
@@ -143,12 +144,14 @@ impl<const SIZE: usize> RegisterSetBuilder<SIZE> {
 
     /// Place a writable 16-bit value at the given position in
     /// little-endian order.
+    #[allow(unused)]
     pub fn u16_le_rw_at(&mut self, pos: usize, value: u16) -> &mut Self {
         self.u16_le_at(pos, value, 0xFFFF)
     }
 
     /// Place a little-endian 16-bit write-one-clear (W1C) value at the given position. Bits flip to
     /// zero when they are written with a 1.
+    #[allow(unused)]
     pub fn u16_le_w1c_at(&mut self, pos: usize, value: u16) -> &mut Self {
         self.init_u16_le(pos, value, 0, 0xFFFF);
         self
@@ -175,6 +178,7 @@ impl<const SIZE: usize> RegisterSetBuilder<SIZE> {
 
     /// Place a little-endian 32-bit write-one-clear (W1C) value at the given position. Bits flip to
     /// zero when they are written with a 1.
+    #[allow(unused)]
     pub fn u32_le_w1c_at(&mut self, pos: usize, value: u32) -> &mut Self {
         self.init_u32_le(pos, value, 0, 0xFFFF_FFFF);
         self
@@ -189,6 +193,7 @@ impl<const SIZE: usize> RegisterSetBuilder<SIZE> {
 
     /// Place a read-only 64-bit value at the given position in
     /// little-endian order.
+    #[allow(unused)]
     pub fn u64_le_ro_at(&mut self, pos: usize, value: u64) -> &mut Self {
         self.u64_le_at(pos, value, 0)
     }
@@ -201,6 +206,7 @@ impl<const SIZE: usize> RegisterSetBuilder<SIZE> {
 
     /// Place a little-endian 64-bit write-one-clear (W1C) value at the given position. Bits flip to
     /// zero when they are written with a 1.
+    #[allow(unused)]
     pub fn u64_le_w1c_at(&mut self, pos: usize, value: u64) -> &mut Self {
         self.init_u64_le(pos, value, 0, 0xFFFF_FFFF_FFFF_FFFF);
         self
@@ -274,6 +280,7 @@ impl<const SIZE: usize> RegisterSet<SIZE> {
     ///
     /// This is typically used by the device emulation logic itself to update
     /// read-only or W1C registers.
+    #[allow(unused)]
     pub fn write_direct(&mut self, req: Request, val: u64) {
         let le_bytes = val.to_le_bytes();
 

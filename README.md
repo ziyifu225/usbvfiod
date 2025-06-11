@@ -119,3 +119,26 @@ checks can become annoying. In this case, use:
 ```console
 $ git commit --no-verify
 ```
+
+### Kernel Debug Messages for XHCI
+
+The XHCI driver in the Linux kernel prints helpful messages with `xhci_dbg`.
+If your kernel supports `CONFIG_DYNAMIC_DEBUG` (the NixOS netboot kernel does),
+you can enable the messages for XHCI with:
+
+```
+$ echo "file drivers/usb/host/xhci* +p" | sudo tee /sys/kernel/debug/dynamic_debug/control
+```
+
+Then, you can filter the kernel log for the relevant messages:
+
+```
+$ sudo dmesg | grep -E xhci\|usb
+```
+
+> [!TIP]
+> You can also enable the dynamic debug messages on boot by adding
+> `xhci_hcd.dyndbg==pmfl xhci_pci.dyndbg==pmfl` to the command line.
+>
+> Alternatively, provide `dyndbg==pfml` as option to `modprobe` on
+> invocation or through a `modprobe` config.

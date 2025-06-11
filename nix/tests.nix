@@ -17,13 +17,33 @@ let
           # The virtio-console is an option as well, but is not
           # compiled into the NixOS kernel and would be inconvenient.
           "console=ttyS0"
+          # Enable dyndbg messages for the XHCI driver.
+          "xhci_pci.dyndbg==pmfl"
+          "xhci_hcd.dyndbg==pmfl"
         ];
 
         # Enable debug verbosity.
-        boot.consoleLogLevel = 7;
+        boot.consoleLogLevel = 8;
 
         # Convenience packages for interactive use
         environment.systemPackages = [ pkgs.pciutils pkgs.usbutils ];
+
+        # Add user services that run on automatic login.
+        systemd.user.services = {
+          dump-diagnostics = {
+            description = "Dump diagnostic information";
+            wantedBy = [ "default.target" ];
+
+            serviceConfig = {
+              ExecStart = pkgs.writeShellScript "diagnostic-dump" ''
+                echo Dumping Diagnostics
+                cat /proc/interrupts
+              '';
+              StandardOutput = "journal+console";
+              StandardError = "journal+console";
+            };
+          };
+        };
 
         # Silence the useless stateVersion warning. We have no state to keep.
         system.stateVersion = config.system.nixos.release;
@@ -49,12 +69,18 @@ let
   # well.
   usbvfiodSocket = "/tmp/usbvfio";
   cloudHypervisorLog = "/tmp/chv.log";
+
+  # Provide a raw file as usb stick test image.
+  usbDiskImage = pkgs.writeText "usb-stick-image.raw" ''
+    This is an uninitialized drive.
+  '';
 in
 {
   integration-smoke = pkgs.nixosTest {
     name = "usbvfiod Smoke Test";
 
     nodes.machine = { pkgs, ... }: {
+      boot.kernelModules = [ "kvm" ];
       systemd.services.usbvfiod = {
         wantedBy = [ "multi-user.target" ];
 
@@ -84,6 +110,13 @@ in
       virtualisation = {
         cores = 2;
         memorySize = 4096;
+        qemu.options = [
+          # A virtual USB XHCI controller in the host ...
+          "-device qemu-xhci,id=host-xhci,addr=10"
+          # ... with an attached usb stick.
+          "-drive if=none,id=usbstick,format=raw,snapshot=on,file=${usbDiskImage}"
+          "-device usb-storage,bus=host-xhci.0,drive=usbstick"
+        ];
       };
     };
 
@@ -97,6 +130,12 @@ in
       # Check whether the USB controller pops up.
       machine.wait_until_succeeds("grep -Fq 'usb usb1: Product: xHCI Host Controller' ${cloudHypervisorLog}", timeout=3000)
       machine.wait_until_succeeds("grep -Fq 'hub 1-0:1.0: 1 port detected' ${cloudHypervisorLog}")
+
+      # Read the diagnostic information after login.
+      machine.wait_until_succeeds("grep -Eq '\s+1\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
+
+      # Check whether the virtual usb stick is available in the host.
+      machine.succeed('grep -Fq "uninitialized drive" /dev/sda')
     '';
   };
 }

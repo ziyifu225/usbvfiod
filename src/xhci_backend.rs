@@ -1,5 +1,6 @@
 use std::{
     fs::File,
+    io::Write,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -8,13 +9,17 @@ use anyhow::{Context, Result};
 use tracing::{debug, info, trace, warn};
 
 use vfio_bindings::bindings::vfio::{
-    vfio_region_info, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS,
-    VFIO_REGION_INFO_FLAG_READ, VFIO_REGION_INFO_FLAG_WRITE,
+    vfio_region_info, VFIO_PCI_BAR0_REGION_INDEX, VFIO_PCI_BAR1_REGION_INDEX,
+    VFIO_PCI_BAR2_REGION_INDEX, VFIO_PCI_BAR3_REGION_INDEX, VFIO_PCI_BAR4_REGION_INDEX,
+    VFIO_PCI_BAR5_REGION_INDEX, VFIO_PCI_CONFIG_REGION_INDEX, VFIO_PCI_MSIX_IRQ_INDEX,
+    VFIO_PCI_NUM_IRQS, VFIO_PCI_NUM_REGIONS, VFIO_REGION_INFO_FLAG_READ,
+    VFIO_REGION_INFO_FLAG_WRITE,
 };
 use vfio_user::{IrqInfo, ServerBackend};
 
-use usbvfiod::device::{
+use crate::device::{
     bus::{Request, RequestSize},
+    interrupt_line::{DummyInterruptLine, InterruptLine},
     pci::{traits::PciDevice, xhci::XhciController},
 };
 
@@ -23,7 +28,28 @@ use crate::{dynamic_bus::DynamicBus, memory_segment::MemorySegment};
 #[derive(Debug)]
 pub struct XhciBackend {
     dma_bus: Arc<DynamicBus>,
-    device: Mutex<XhciController>,
+    controller: Mutex<XhciController>,
+}
+
+#[derive(Debug)]
+struct InterruptEventFd {
+    /// TODO: Get rid of the Mutex. Writes to the EventFd are safe.
+    ///  This just satisfies the Send + Sync requirements and provides
+    ///  interior mutability for the [`InterruptLine`] trait.
+    fd: Mutex<File>,
+}
+
+impl InterruptLine for InterruptEventFd {
+    fn interrupt(&self) {
+        // Write any 8 byte value to the EventFd.
+        // TODO: we just expect this to always work currently.
+        let _amount = self
+            .fd
+            .lock()
+            .unwrap()
+            .write(&1u64.to_le_bytes())
+            .expect("should always be able to write event fd");
+    }
 }
 
 impl XhciBackend {
@@ -34,11 +60,11 @@ impl XhciBackend {
         I: IntoIterator,
         I::Item: AsRef<Path>,
     {
-        let dma_bus: Arc<DynamicBus> = Default::default();
+        let dma_bus = Arc::new(DynamicBus::new());
 
         let backend = Self {
-            device: Mutex::new(XhciController::new(dma_bus.clone())),
-            dma_bus: Arc::new(DynamicBus::new()),
+            controller: Mutex::new(XhciController::new(dma_bus.clone())),
+            dma_bus,
         };
 
         for device in devices {
@@ -82,38 +108,73 @@ impl XhciBackend {
     /// Return a list of regions for [`vfio_user::Server::new`].
     pub fn regions(&self) -> Vec<vfio_region_info> {
         (0..VFIO_PCI_NUM_REGIONS)
-            .map(|i| match i {
-                VFIO_PCI_CONFIG_REGION_INDEX => vfio_region_info {
+            .map(|i| {
+                let empty_region = vfio_region_info {
                     argsz: size_of::<vfio_region_info>() as u32,
                     index: i,
-                    size: 256,
-                    flags: VFIO_REGION_INFO_FLAG_READ | VFIO_REGION_INFO_FLAG_WRITE,
                     ..Default::default()
-                },
+                };
 
-                _ => vfio_region_info {
-                    argsz: size_of::<vfio_region_info>() as u32,
-                    index: i,
-                    ..Default::default()
-                },
+                match i {
+                    VFIO_PCI_CONFIG_REGION_INDEX => {
+                        debug!("Client queried config space region");
+
+                        vfio_region_info {
+                            argsz: size_of::<vfio_region_info>() as u32,
+                            index: i,
+                            size: 256,
+                            flags: VFIO_REGION_INFO_FLAG_READ | VFIO_REGION_INFO_FLAG_WRITE,
+                            ..Default::default()
+                        }
+                    }
+
+                    VFIO_PCI_BAR0_REGION_INDEX
+                    | VFIO_PCI_BAR1_REGION_INDEX
+                    | VFIO_PCI_BAR2_REGION_INDEX
+                    | VFIO_PCI_BAR3_REGION_INDEX
+                    | VFIO_PCI_BAR4_REGION_INDEX
+                    | VFIO_PCI_BAR5_REGION_INDEX => {
+                        let bar_no = i - VFIO_PCI_BAR0_REGION_INDEX;
+
+                        if let Some(bar_info) = u8::try_from(bar_no)
+                            .ok()
+                            .and_then(|bar_no| self.controller.bar(bar_no))
+                        {
+                            debug!("Client queried BAR{bar_no} region: {:?}", bar_info);
+                            vfio_region_info {
+                                argsz: size_of::<vfio_region_info>() as u32,
+                                index: i,
+                                size: bar_info.size.into(),
+                                flags: VFIO_REGION_INFO_FLAG_READ | VFIO_REGION_INFO_FLAG_WRITE,
+                                ..Default::default()
+                            }
+                        } else {
+                            debug!("Client queried BAR{bar_no} region: (empty)");
+                            empty_region
+                        }
+                    }
+
+                    unknown => {
+                        debug!("Client queried unknown VFIO region: {unknown}");
+                        empty_region
+                    }
+                }
             })
             .collect()
     }
 
     /// Return a list of IRQs for [`vfio_user::Server::new`].
     pub fn irqs(&self) -> Vec<IrqInfo> {
-        let mut irqs = Vec::with_capacity(VFIO_PCI_NUM_IRQS as usize);
-        for index in 0..VFIO_PCI_NUM_IRQS {
-            let irq = IrqInfo {
+        (0..VFIO_PCI_NUM_IRQS)
+            .map(|index| IrqInfo {
                 index,
-                count: 1,
+                count: match index {
+                    VFIO_PCI_MSIX_IRQ_INDEX => 1,
+                    _ => 0,
+                },
                 flags: 0,
-            };
-
-            irqs.push(irq);
-        }
-
-        irqs
+            })
+            .collect()
     }
 }
 
@@ -127,12 +188,12 @@ impl ServerBackend for XhciBackend {
         trace!("read  region {region} offset {offset:#x}+{}", data.len());
 
         let value: u64 = match region {
-            VFIO_PCI_CONFIG_REGION_INDEX => self.device.read_cfg(Request::new(
+            VFIO_PCI_CONFIG_REGION_INDEX => self.controller.read_cfg(Request::new(
                 offset,
                 RequestSize::try_from(data.len() as u64).expect("should use valid request size"),
             )),
 
-            0 => self.device.read_io(
+            0 => self.controller.read_io(
                 0,
                 Request::new(
                     offset,
@@ -162,7 +223,7 @@ impl ServerBackend for XhciBackend {
         );
 
         match region {
-            VFIO_PCI_CONFIG_REGION_INDEX => self.device.write_cfg(
+            VFIO_PCI_CONFIG_REGION_INDEX => self.controller.write_cfg(
                 Request::new(
                     offset,
                     RequestSize::try_from(data.len() as u64)
@@ -183,7 +244,7 @@ impl ServerBackend for XhciBackend {
                 },
             ),
 
-            0 => self.device.write_io(
+            0 => self.controller.write_io(
                 0,
                 Request::new(
                     offset,
@@ -256,6 +317,27 @@ impl ServerBackend for XhciBackend {
             "set IRQs: {index} flags: {flags:#x} start: {start:#x} count: {count:#x} #fds: {}",
             fds.len()
         );
+        assert_eq!(
+            index, VFIO_PCI_MSIX_IRQ_INDEX,
+            "Only MSI-X interrupts are supported"
+        );
+        assert!(count <= 1, "Only a single interrupt is supported");
+
+        let irqs: Vec<Arc<InterruptEventFd>> = fds
+            .into_iter()
+            .map(|file| {
+                Arc::new(InterruptEventFd {
+                    fd: Mutex::new(file),
+                })
+            })
+            .collect();
+
+        let irq: Arc<dyn InterruptLine> = match irqs.first() {
+            Some(eventfd) => eventfd.clone(),
+            _ => Arc::new(DummyInterruptLine::default()),
+        };
+
+        self.controller.lock().unwrap().connect_irq(irq);
 
         Ok(())
     }
