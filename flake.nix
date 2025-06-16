@@ -151,8 +151,8 @@
           shellHook = ''
 
             # Added: Hot load udev rules #
-            echo ">>> Hot loading udev rules: udev_rules/99-usbvfiod.rules -> /run/udev/rules.d/99-usbvfiod.rules"
-            sudo cp $PWD/udev_rules/99-usbvfiod.rules /run/udev/rules.d/99-usbvfiod.rules
+            echo ">>> Hot loading udev rules: udev_rules/71-usbvfiod.rules -> /run/udev/rules.d/71-usbvfiod.rules"
+            sudo cp $PWD/udev_rules/71-usbvfiod.rules /run/udev/rules.d/71-usbvfiod.rules
             sudo udevadm control --reload
             sudo udevadm trigger
             echo ">>> udev rules are now active (runtime)"
