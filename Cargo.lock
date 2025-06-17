@@ -747,6 +747,7 @@ dependencies = [
  "memmap2",
  "nusb",
  "proptest",
+ "thiserror 2.0.12",
  "tracing",
  "tracing-log",
  "tracing-subscriber",

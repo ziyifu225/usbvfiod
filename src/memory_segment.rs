@@ -20,8 +20,16 @@ pub enum AccessRights {
     ReadWrite,
 }
 
-impl From<DmaMapFlags> for AccessRights {
-    fn from(value: DmaMapFlags) -> Self {
+#[derive(thiserror::Error, Debug)]
+pub enum DmaMapFlagsError {
+    #[error("Invalid DMA map flags: {value:?}")]
+    InvalidFlags { value: DmaMapFlags },
+}
+
+impl TryFrom<DmaMapFlags> for AccessRights {
+    type Error = DmaMapFlagsError;
+
+    fn try_from(value: DmaMapFlags) -> Result<Self, Self::Error> {
         let readable = value.contains(DmaMapFlags::READ_ONLY);
         let writable = value.contains(DmaMapFlags::WRITE_ONLY);
 
@@ -32,11 +40,12 @@ impl From<DmaMapFlags> for AccessRights {
         }
 
         if readable && !writable {
-            AccessRights::ReadOnly
+            Ok(AccessRights::ReadOnly)
         } else if readable && writable {
-            AccessRights::ReadWrite
+            Ok(AccessRights::ReadWrite)
         } else {
-            todo!("unreadable memory region? {:#0x}", value.bits())
+            // Not readable?
+            Err(DmaMapFlagsError::InvalidFlags { value })
         }
     }
 }
