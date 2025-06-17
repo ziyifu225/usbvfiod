@@ -11,6 +11,7 @@ use std::{
 
 use crate::device::bus::{BusDevice, Request, RequestSize};
 use memmap2::{Mmap, MmapMut, MmapOptions};
+use tracing::warn;
 use vfio_user::DmaMapFlags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,14 +20,23 @@ pub enum AccessRights {
     ReadWrite,
 }
 
-impl TryFrom<DmaMapFlags> for AccessRights {
-    type Error = ();
+impl From<DmaMapFlags> for AccessRights {
+    fn from(value: DmaMapFlags) -> Self {
+        let readable = value.contains(DmaMapFlags::READ_ONLY);
+        let writable = value.contains(DmaMapFlags::WRITE_ONLY);
 
-    fn try_from(value: DmaMapFlags) -> Result<Self, Self::Error> {
-        match value {
-            DmaMapFlags::READ_ONLY => Ok(AccessRights::ReadOnly),
-            DmaMapFlags::READ_WRITE => Ok(AccessRights::ReadWrite),
-            unsupported => todo!("unsupported DmaMapFlags {unsupported:?}"),
+        // Due to missing Eq and Copy traits, checking whether there are any
+        // unknown bits set is a bit convoluted.
+        if !(value.bits() & !(DmaMapFlags::READ_WRITE.bits())) != 0 {
+            warn!("Unknown DmaMapFlags set: {:0x}", value.bits());
+        }
+
+        if readable && !writable {
+            AccessRights::ReadOnly
+        } else if readable && writable {
+            AccessRights::ReadWrite
+        } else {
+            todo!("unreadable memory region? {:#0x}", value.bits())
         }
     }
 }
