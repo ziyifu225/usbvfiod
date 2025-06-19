@@ -85,30 +85,69 @@ in
         pkgs.jq
       ];
 
-      boot.kernelModules = [ "kvm" ];
-      systemd.services.usbvfiod = {
-        wantedBy = [ "multi-user.target" ];
-
-        serviceConfig = {
-          ExecStart = ''
-            ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket}
-          '';
-        };
+      users.users.testUser = {
+        isNormalUser = true;
+        extraGroups = [ ];
+        password = "test";
       };
 
-      systemd.services.cloud-hypervisor = {
-        wantedBy = [ "multi-user.target" ];
-        requires = [ "usbvfiod.service" ];
-        after = [ "usbvfiod.service" ];
+      boot.kernelModules = [ "kvm" ];
+      systemd.services = {
+        detect-usb-device = {
+          wantedBy = [ "multi-user.target" ];
+          before = [ "usbvfiod.service" ];
 
-        serviceConfig = {
-          ExecStart = ''
-            ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
-              --kernel ${netboot.kernel} \
-              --cmdline ${lib.escapeShellArg netboot.cmdline} \
-              --initramfs ${netboot.initrd} \
-              --user-device socket=${usbvfiodSocket}
-          '';
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = pkgs.writeShellScript "detect-usb" ''
+              set -euxo pipefail
+              for dev in /dev/bus/usb/*/*; do
+                info=$(udevadm info --query=all --name="$dev")
+
+                if echo "$info" | grep -q "ID_VENDOR_ID=46f4" &&
+                  echo "$info" | grep -q "ID_MODEL_ID=0001"; then
+                  echo "Found QEMU USB HARDDRIVE at $dev"
+                  echo "USBVFIOD_DEVICE=$dev" > /run/usbvfiod.env
+                  exit 0
+                fi
+              done
+
+              echo "No matching QEMU USB HARDDRIVE (46f4:0001) found" >&2
+              exit 1
+            '';
+          };
+        };
+
+        usbvfiod = {
+          wantedBy = [ "multi-user.target" ];
+          after = [ "detect-usb-device.service" ];
+          requires = [ "detect-usb-device.service" ];
+
+          serviceConfig = {
+            # User = "testUser";
+            # Group = "users";
+            EnvironmentFile = "/run/usbvfiod.env";
+            ExecStart = ''
+              ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "$USBVFIOD_DEVICE"
+            '';
+          };
+        };
+
+        cloud-hypervisor = {
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "usbvfiod.service" ];
+          after = [ "usbvfiod.service" ];
+
+          serviceConfig = {
+            ExecStart = ''
+              ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
+                --kernel ${netboot.kernel} \
+                --cmdline ${lib.escapeShellArg netboot.cmdline} \
+                --initramfs ${netboot.initrd} \
+                --user-device socket=${usbvfiodSocket}
+            '';
+          };
         };
       };
 
@@ -187,6 +226,10 @@ in
       print("-------- USB Device Information Report --------")
       stdout = machine.execute("cat /tmp/test_report.txt")[1]
       print(stdout)
+
+      print(machine.execute("cat /run/usbvfiod.env")[1])
+      print(machine.execute("systemctl status usbvfiod")[1])
+      print(machine.execute("ps -ef | grep usbvfiod")[1])
     '';
   };
 }
