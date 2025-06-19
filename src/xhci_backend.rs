@@ -282,7 +282,13 @@ impl ServerBackend for XhciBackend {
         info!("dma_map flags = {flags:?} offset = {offset} address = {address} size = {size} fd = {fd:?}");
 
         if let Some(fd) = fd {
-            let mseg = MemorySegment::new_from_fd(&fd, offset, size, flags.try_into().unwrap())?;
+            let mseg = MemorySegment::new_from_fd(
+                &fd,
+                offset,
+                size,
+                // We want to know when this happens, so bail out eagerly here.
+                flags.try_into().expect("Failed to convert flags"),
+            )?;
 
             self.dma_bus.add(address, Arc::new(mseg)).unwrap();
         } else {
