@@ -11,6 +11,7 @@ use std::{
 
 use crate::device::bus::{BusDevice, Request, RequestSize};
 use memmap2::{Mmap, MmapMut, MmapOptions};
+use tracing::warn;
 use vfio_user::DmaMapFlags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,14 +20,32 @@ pub enum AccessRights {
     ReadWrite,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum DmaMapFlagsError {
+    #[error("Invalid DMA map flags: {value:?}")]
+    InvalidFlags { value: DmaMapFlags },
+}
+
 impl TryFrom<DmaMapFlags> for AccessRights {
-    type Error = ();
+    type Error = DmaMapFlagsError;
 
     fn try_from(value: DmaMapFlags) -> Result<Self, Self::Error> {
-        match value {
-            DmaMapFlags::READ_ONLY => Ok(AccessRights::ReadOnly),
-            DmaMapFlags::READ_WRITE => Ok(AccessRights::ReadWrite),
-            unsupported => todo!("unsupported DmaMapFlags {unsupported:?}"),
+        let readable = value.contains(DmaMapFlags::READ_ONLY);
+        let writable = value.contains(DmaMapFlags::WRITE_ONLY);
+
+        // Due to missing Eq and Copy traits, checking whether there are any
+        // unknown bits set is a bit convoluted.
+        if !(value.bits() & !(DmaMapFlags::READ_WRITE.bits())) != 0 {
+            warn!("Unknown DmaMapFlags set: {:0x}", value.bits());
+        }
+
+        if readable && !writable {
+            Ok(AccessRights::ReadOnly)
+        } else if readable && writable {
+            Ok(AccessRights::ReadWrite)
+        } else {
+            // Not readable?
+            Err(DmaMapFlagsError::InvalidFlags { value })
         }
     }
 }
