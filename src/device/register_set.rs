@@ -41,7 +41,7 @@ impl<const SIZE: usize> RegisterSetBuilder<SIZE> {
     /// Initialize a builder for a fully read-only MMIO region where
     /// all bits are set.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             data: [0xFF; SIZE],
             rw_mask: [0; SIZE],
@@ -248,8 +248,7 @@ impl<const SIZE: usize> RegisterSetBuilder<SIZE> {
                 let overlap = rw_mask & w1c_mask;
                 assert_eq!(
                     overlap, 0,
-                    "Writable and W1C bits overlap in register set at offset {:#x}: {:#x}",
-                    offset, overlap
+                    "Writable and W1C bits overlap in register set at offset {offset:#x}: {overlap:#x}",
                 );
             });
 

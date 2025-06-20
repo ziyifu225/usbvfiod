@@ -40,9 +40,9 @@ impl TryFrom<DmaMapFlags> for AccessRights {
         }
 
         if readable && !writable {
-            Ok(AccessRights::ReadOnly)
+            Ok(Self::ReadOnly)
         } else if readable && writable {
-            Ok(AccessRights::ReadWrite)
+            Ok(Self::ReadWrite)
         } else {
             // Not readable?
             Err(DmaMapFlagsError::InvalidFlags { value })
@@ -57,17 +57,18 @@ enum Mapping {
 }
 
 impl Mapping {
+    #[allow(clippy::missing_const_for_fn)] // false positive
     fn as_ptr(&self) -> *const u8 {
         match self {
-            Mapping::ReadOnly(map) => map.as_ptr(),
-            Mapping::ReadWrite(map) => map.as_ptr(),
+            Self::ReadOnly(map) => map.as_ptr(),
+            Self::ReadWrite(map) => map.as_ptr(),
         }
     }
 
-    fn is_writable(&self) -> bool {
+    const fn is_writable(&self) -> bool {
         match self {
-            Mapping::ReadWrite(_) => true,
-            Mapping::ReadOnly(_) => false,
+            Self::ReadWrite(_) => true,
+            Self::ReadOnly(_) => false,
         }
     }
 }
@@ -91,7 +92,7 @@ impl MemorySegment {
         size: u64,
         access_rights: AccessRights,
     ) -> Result<Self, std::io::Error> {
-        Ok(MemorySegment {
+        Ok(Self {
             size,
             mapping: Arc::new({
                 let mut mmap = MmapOptions::new();
