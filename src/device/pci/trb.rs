@@ -193,7 +193,7 @@ pub enum CompletionCode {
 pub enum CommandTrb {
     EnableSlotCommand,
     DisableSlotCommand,
-    AddressDeviceCommand,
+    AddressDeviceCommand(AddressDeviceCommandTrbData),
     ConfigureEndpointCommand,
     EvaluateContextCommand,
     ResetEndpointCommand,
@@ -230,7 +230,9 @@ impl TryFrom<&[u8]> for CommandTrb {
             // return the enum variant.
             trb_types::ENABLE_SLOT_COMMAND => CommandTrb::EnableSlotCommand,
             trb_types::DISABLE_SLOT_COMMAND => CommandTrb::DisableSlotCommand,
-            trb_types::ADDRESS_DEVICE_COMMAND => CommandTrb::AddressDeviceCommand,
+            trb_types::ADDRESS_DEVICE_COMMAND => {
+                CommandTrb::AddressDeviceCommand(AddressDeviceCommandTrbData::parse(bytes)?)
+            }
             trb_types::CONFIGURE_ENDPOINT_COMMAND => CommandTrb::ConfigureEndpointCommand,
             trb_types::EVALUATE_CONTEXT_COMMAND => CommandTrb::EvaluateContextCommand,
             trb_types::RESET_ENDPOINT_COMMAND => CommandTrb::ResetEndpointCommand,
@@ -306,6 +308,51 @@ impl LinkTrbData {
         Ok(LinkTrbData {
             ring_segment_pointer,
             toggle_cycle,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct AddressDeviceCommandTrbData {
+    /// The address of the input context.
+    pub input_context_pointer: u64,
+    /// The flag that indicates whether to send a USB SET_ADDRESS request to the
+    /// device.
+    pub block_set_address_request: bool,
+    /// The associated Slot ID
+    pub slot_id: u8,
+}
+
+impl AddressDeviceCommandTrbData {
+    /// Parse data of a Address Device Command TRB.
+    ///
+    /// Only `CommandTrb::try_from` should call this function. Thus, we make
+    /// the following assumptions to avoid duplicate checks:
+    ///
+    /// - `value` is a slice of size 16.
+    /// - The TRB type (upper 6 bit of byte 13) indicate a link TRB.
+    ///
+    /// # Limitations
+    ///
+    /// The function currently does not check if the slice respects all RsvdZ
+    /// fields.
+    fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+        let icp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
+        let input_context_pointer = u64::from_le_bytes(icp_bytes);
+
+        // the lowest for bit of the pointer are RsvdZ to ensure 16-byte
+        // alignment.
+        if input_context_pointer & 0xf != 0 {
+            return Err(TrbParseError::RsvdZViolation);
+        }
+
+        let block_set_address_request = trb_bytes[13] & 0x2 != 0;
+        let slot_id = trb_bytes[15];
+
+        Ok(AddressDeviceCommandTrbData {
+            input_context_pointer,
+            block_set_address_request,
+            slot_id,
         })
     }
 }
@@ -396,6 +443,36 @@ mod tests {
         } else {
             panic!(
                 "A TRB with TRB type 6 should result in a CommandTrb::Link. Got instead: {:?}",
+                trb
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_address_device_command_trb() {
+        let trb_bytes = [
+            0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x2e,
+            0x00, 0x13,
+        ];
+        let trb_result = CommandTrb::try_from(&trb_bytes[..]);
+        assert!(
+            trb_result.is_ok(),
+            "A valid TRB byte representation should be parsed successfully."
+        );
+        let trb = trb_result.unwrap();
+        if let CommandTrb::AddressDeviceCommand(data) = trb {
+            assert_eq!(
+                0x1122334455667780, data.input_context_pointer,
+                "input_context_pointer was parsed incorrectly."
+            );
+            assert!(
+                data.block_set_address_request,
+                "BSR bit was parsed incorrectly."
+            );
+            assert_eq!(0x13, data.slot_id, "slot_id was parsed incorrectly.");
+        } else {
+            panic!(
+                "A TRB with TRB type 11 should result in a CommandTrb::AddressDeviceCommand. Got instead: {:?}",
                 trb
             );
         }
