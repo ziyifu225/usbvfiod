@@ -309,6 +309,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_enable_slot_command_trb() {
+        let trb_bytes = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24,
+            0x00, 0x00,
+        ];
+        let trb_result = CommandTrb::try_from(&trb_bytes[..]);
+        assert!(
+            trb_result.is_ok(),
+            "A valid TRB byte representation should be parsed successfully."
+        );
+        let trb = trb_result.unwrap();
+        if let CommandTrb::EnableSlotCommand = trb {
+        } else {
+            panic!(
+                "A TRB with TRB type 9 should result in a CommandTrb::EnableSlotCommand. Got instead: {:?}",
+                trb
+            );
+        }
+    }
+
+    #[test]
     fn test_command_completion_event_trb() {
         let trb = EventTrb::new_command_completion_event_trb(
             0x1122334455667780,
