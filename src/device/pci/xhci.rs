@@ -4,7 +4,7 @@
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
 use std::sync::{Arc, Mutex};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::device::{
     bus::{BusDeviceRef, Request, SingleThreadedBusDevice},
@@ -12,16 +12,19 @@ use crate::device::{
     pci::{
         config_space::{ConfigSpace, ConfigSpaceBuilder},
         constants::xhci::{
-            capability, offset,
-            operational::{crcr, portsc},
-            runtime, MAX_INTRS, MAX_SLOTS, OP_BASE, RUN_BASE,
+            capability, offset, operational::portsc, runtime, MAX_INTRS, MAX_SLOTS, OP_BASE,
+            RUN_BASE,
         },
         traits::PciDevice,
         trb::EventTrb,
     },
 };
 
-use super::{config_space::BarInfo, rings::EventRing};
+use super::{
+    config_space::BarInfo,
+    rings::{CommandRing, EventRing},
+    trb::CommandTrb,
+};
 
 /// The emulation of a XHCI controller.
 #[derive(Debug, Clone)]
@@ -36,17 +39,11 @@ pub struct XhciController {
     /// The current Run/Stop status of the controller.
     running: bool,
 
-    /// The current Run/Stop status of the command ring.
-    command_ring_running: bool,
-
-    /// Internal Command Ring position.
-    command_ring_dequeue_pointer: u64,
+    /// The Command Ring.
+    command_ring: CommandRing,
 
     /// The Event Ring of the single Interrupt Register Set.
     event_ring: EventRing,
-
-    /// Internal Consumer Cycle State for the next TRB fetch.
-    consumer_cycle_state: bool,
 
     /// Configured device slots.
     slots: Vec<()>,
@@ -84,9 +81,7 @@ impl XhciController {
                 .msix_capability(MAX_INTRS.try_into().unwrap(), 3, 0, 3, 0x1000)
                 .config_space(),
             running: false,
-            command_ring_running: false,
-            command_ring_dequeue_pointer: 0,
-            consumer_cycle_state: false,
+            command_ring: CommandRing::default(),
             event_ring: EventRing::default(),
             slots: vec![],
             device_contexts: vec![],
@@ -107,13 +102,6 @@ impl XhciController {
     #[must_use]
     pub fn status(&self) -> u64 {
         !u64::from(self.running) & 0x1u64
-    }
-
-    /// Obtain the current command ring status as defined for reading the `CRCR` register.
-    #[must_use]
-    pub fn command_ring_status(&self) -> u64 {
-        // All fields except CRR (command ring running) read as zero.
-        (u64::from(self.command_ring_running) << 3) & 0b100
     }
 
     /// Obtain the current host controller configuration as defined for the `CONFIG` register.
@@ -164,30 +152,41 @@ impl XhciController {
         }
     }
 
-    /// Handle Command Ring Control Register (CRCR) updates.
-    pub fn update_command_ring(&mut self, value: u64) {
-        if self.command_ring_running {
-            match value {
-                abort if abort & crcr::CA != 0 => todo!(),
-                stop if stop & crcr::CS != 0 => todo!(),
-                ignored => {
-                    warn!(
-                        "received useless write to CRCR while running {:#x}",
-                        ignored
-                    )
-                }
-            }
+    fn doorbell(&mut self) {
+        debug!("Ding Dong!");
+        // check command available
+        let next = self.command_ring.next_command_trb(self.dma_bus.clone());
+        if let Some((address, Ok(cmd_trb))) = next {
+            self.handle_command(address, cmd_trb);
         } else {
-            let dequeue_ptr = value & crcr::DEQUEUE_POINTER_MASK;
-            if self.command_ring_dequeue_pointer != dequeue_ptr {
-                debug!(
-                    "updating command ring dequeue ptr from {:#x} to {:#x}",
-                    self.command_ring_dequeue_pointer, dequeue_ptr
-                );
-                self.command_ring_dequeue_pointer = dequeue_ptr;
+            debug!(
+                "Doorbell was rang, but no (valid) command found on the command ring ({:?})",
+                next
+            );
+        }
+    }
+
+    fn handle_command(&mut self, address: u64, cmd: CommandTrb) {
+        debug!("handling command {:?} at {:#x}", cmd, address);
+        match cmd {
+            CommandTrb::EnableSlotCommand => {
+                debug!("Handling Enable Slot Command");
+                todo!()
             }
-            // Update internal consumer cycle state for next TRB fetch.
-            self.consumer_cycle_state = value & crcr::RCS != 0;
+            CommandTrb::DisableSlotCommand => todo!(),
+            CommandTrb::AddressDeviceCommand(data) => {
+                debug!("Handling Address Device Command (input context pointer: {:#x}, BSR: {}, slot id: {})", data.input_context_pointer, data.block_set_address_request, data.slot_id);
+                todo!();
+            }
+            CommandTrb::ConfigureEndpointCommand => todo!(),
+            CommandTrb::EvaluateContextCommand => todo!(),
+            CommandTrb::ResetEndpointCommand => todo!(),
+            CommandTrb::StopEndpointCommand => todo!(),
+            CommandTrb::SetTrDequeuePointerCommand => todo!(),
+            CommandTrb::ResetDeviceCommand => todo!(),
+            CommandTrb::ForceHeaderCommand => todo!(),
+            CommandTrb::NoOpCommand => todo!(),
+            CommandTrb::Link(_) => unreachable!(),
         }
     }
 }
@@ -209,7 +208,7 @@ impl PciDevice for Mutex<XhciController> {
             // xHC Operational Registers
             offset::USBCMD => self.lock().unwrap().run(value),
             offset::DNCTL => assert_eq!(value, 2, "debug notifications not supported"),
-            offset::CRCR => self.lock().unwrap().update_command_ring(value),
+            offset::CRCR => self.lock().unwrap().command_ring.control(value),
             offset::CRCR_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::DCBAAP => self.lock().unwrap().configure_device_contexts(value),
             offset::DCBAAP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
@@ -237,6 +236,7 @@ impl PciDevice for Mutex<XhciController> {
                 .event_ring
                 .update_dequeue_pointer(value),
             offset::ERDP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
+            0x2000 => self.lock().unwrap().doorbell(),
             _ => todo!(),
         }
     }
@@ -265,7 +265,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::USBCMD => 0,
             offset::USBSTS => self.lock().unwrap().status(),
             offset::DNCTL => 2,
-            offset::CRCR => self.lock().unwrap().command_ring_status(),
+            offset::CRCR => self.lock().unwrap().command_ring.status(),
             offset::CRCR_HI => 0,
             offset::PAGESIZE => 0x1, /* 4k Pages */
             offset::CONFIG => self.lock().unwrap().config(),
@@ -281,6 +281,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::ERSTBA_HI => 0,
             offset::ERDP => self.lock().unwrap().event_ring.read_dequeue_pointer(),
             offset::ERDP_HI => 0,
+            0x2000 => 0, // kernel reads the doorbell after write
 
             // Everything else is Reserved Zero
             _ => todo!(),
