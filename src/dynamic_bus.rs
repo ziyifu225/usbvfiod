@@ -34,6 +34,10 @@ impl DynamicBus {
         // writer (serialized by the mutex).
         self.bus.store(Arc::new(new_bus));
 
+        // Silence clippy: we want updates to `self.bus` also to be synchronized
+        // by the Mutex.
+        drop(segments);
+
         Ok(())
     }
 }
