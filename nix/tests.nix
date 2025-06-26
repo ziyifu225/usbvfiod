@@ -69,6 +69,8 @@ let
   # well.
   usbvfiodSocket = "/tmp/usbvfio";
   cloudHypervisorLog = "/tmp/chv.log";
+  vendorId = "46f4";
+  productId = "0001";
 
   # Provide a raw file as usb stick test image.
   usbDiskImage = pkgs.writeText "usb-stick-image.raw" ''
@@ -84,6 +86,10 @@ in
         pkgs.usbutils
         pkgs.jq
       ];
+
+      services.udev.extraRules = ''
+        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="teststorage"
+      '';
 
       users.users.testUser = {
         isNormalUser = true;
@@ -102,19 +108,21 @@ in
             RemainAfterExit = true;
             ExecStart = pkgs.writeShellScript "detect-usb" ''
               set -euxo pipefail
-              for dev in /dev/bus/usb/*/*; do
-                info=$(udevadm info --query=all --name="$dev")
-
-                if echo "$info" | grep -q "ID_VENDOR_ID=46f4" &&
-                  echo "$info" | grep -q "ID_MODEL_ID=0001"; then
-                  echo "Found QEMU USB HARDDRIVE at $dev"
-                  echo "USBVFIOD_DEVICE=$dev" > /run/usbvfiod.env
-                  exit 0
+              for i in $(seq 1 10); do
+                if [ -L /dev/teststorage ]; then
+                  break
                 fi
+                sleep 0.5
               done
 
-              echo "No matching QEMU USB HARDDRIVE (46f4:0001) found" >&2
-              exit 1
+              if [ ! -L /dev/teststorage ]; then
+                echo "Symlink /dev/teststorage not found" >&2
+                exit 1
+              fi
+
+              resolved=$(readlink -f /dev/teststorage)
+              echo "Found USB device at $resolved"
+              echo "USBVFIOD_DEVICE=$resolved" > /run/usbvfiod.env
             '';
           };
         };
@@ -227,9 +235,13 @@ in
       stdout = machine.execute("cat /tmp/test_report.txt")[1]
       print(stdout)
 
-      print(machine.execute("cat /run/usbvfiod.env")[1])
-      print(machine.execute("systemctl status usbvfiod")[1])
-      print(machine.execute("ps -ef | grep usbvfiod")[1])
+      print("-------- USBVFIOD Service Verification --------")
+      status = machine.succeed("systemctl is-active usbvfiod").strip()
+      assert status == "active", f"usbvfiod is not active: {status}"
+      print("usbvfiod.service is active.")
+
+      pid = machine.succeed("pgrep -x usbvfiod").strip()
+      print(f"usbvfiod is running with PID {pid}")
     '';
   };
 }
