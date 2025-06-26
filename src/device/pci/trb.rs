@@ -3,7 +3,10 @@
 //! The specification is available
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
-use super::constants::xhci::rings::trb_types::{self, *};
+use super::constants::xhci::rings::{
+    trb_types::{self, *},
+    TRB_SIZE,
+};
 use core::fmt;
 
 /// Represents a TRB that the XHCI controller can place on the event ring.
@@ -219,7 +222,7 @@ impl TryFrom<&[u8]> for CommandTrb {
     /// exception, because the TRB does not contain any additional information.
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let slice_size = bytes.len();
-        if slice_size != 16 {
+        if slice_size != TRB_SIZE {
             return Err(TrbParseError::IncorrectSliceSize(slice_size));
         }
         let trb_type = bytes[13] >> 2;

@@ -324,6 +324,9 @@ pub mod xhci {
 
     /// Constants for the rings
     pub mod rings {
+        /// TRB size in bytes
+        pub const TRB_SIZE: usize = 16;
+
         /// The identifiers of transfer request blocks
         pub mod trb_types {
             pub const NORMAL: u8 = 1;

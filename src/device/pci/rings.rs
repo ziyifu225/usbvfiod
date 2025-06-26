@@ -10,7 +10,10 @@ use super::trb::{CommandTrb, EventTrb, TrbParseError};
 
 use crate::device::{
     bus::{BusDeviceRef, Request, RequestSize},
-    pci::constants::xhci::{operational::crcr, rings::event_ring::segments_table_entry_offsets::*},
+    pci::constants::xhci::{
+        operational::crcr,
+        rings::{event_ring::segments_table_entry_offsets::*, TRB_SIZE},
+    },
 };
 
 /// The Event Ring: A unidirectional means of communication, allowing the XHCI
@@ -135,7 +138,7 @@ impl EventRing {
 
         let enqueue_address = self.enqueue_pointer;
 
-        self.enqueue_pointer += 16;
+        self.enqueue_pointer += TRB_SIZE as u64;
         self.trb_count -= 1;
 
         trace!(
@@ -237,7 +240,7 @@ impl CommandRing {
         dma_bus: BusDeviceRef,
     ) -> Option<(u64, Result<CommandTrb, TrbParseError>)> {
         // retrieve TRB at current dequeue_pointer
-        let mut trb_buffer = [0; 16];
+        let mut trb_buffer = vec![0; TRB_SIZE];
         dma_bus.read_bulk(self.dequeue_pointer, &mut trb_buffer);
 
         debug!(
@@ -270,7 +273,7 @@ impl CommandRing {
         let trb_address = self.dequeue_pointer;
 
         // advance to next TRB
-        self.dequeue_pointer += 16;
+        self.dequeue_pointer += TRB_SIZE as u64;
 
         // return parsed result
         Some((trb_address, trb_result))
