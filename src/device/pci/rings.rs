@@ -235,10 +235,51 @@ impl CommandRing {
     }
 
     /// Try to retrieve a new command from the command ring.
+    ///
+    /// This function only returns `CommandTrb`s that represent commands,
+    /// i.e., it will not return Link TRBs. Instead, Link TRBs are handled
+    /// correctly, which is the reason why the function reads two TRBs to
+    /// return a single one.
     pub fn next_command_trb(
         &mut self,
         dma_bus: BusDeviceRef,
     ) -> Option<(u64, Result<CommandTrb, TrbParseError>)> {
+        // retrieve TRB at dequeue pointer and return None if there is no fresh
+        // TRB
+        let first_trb_result = self.next_trb(dma_bus.clone())?;
+        // special handling for Link TRBs
+        let trb_result = if let Ok(CommandTrb::Link(link_data)) = first_trb_result {
+            // encountered Link TRB
+            // update command ring status
+            self.dequeue_pointer = link_data.ring_segment_pointer;
+            if link_data.toggle_cycle {
+                self.cycle_state = !self.cycle_state;
+            }
+            // lookup first TRB in the new memory segment
+            let second_trb_result = self.next_trb(dma_bus.clone())?;
+            if let Ok(CommandTrb::Link(_)) = second_trb_result {
+                panic!("Link TRB should not follow directly after another Link TRB");
+            }
+            second_trb_result
+        } else {
+            first_trb_result
+        };
+
+        let trb_address = self.dequeue_pointer;
+
+        // advance to next TRB
+        self.dequeue_pointer += TRB_SIZE as u64;
+
+        // return parsed result
+        Some((trb_address, trb_result))
+    }
+
+    /// Try to retrieve a new command from the command ring.
+    ///
+    /// If there is a fresh TRB at the dequeue pointer, the function tries to
+    /// parse the command TRB and returns the result. If there is a fresh Link
+    /// TRB, this function will return it!
+    fn next_trb(&self, dma_bus: BusDeviceRef) -> Option<Result<CommandTrb, TrbParseError>> {
         // retrieve TRB at current dequeue_pointer
         let mut trb_buffer = vec![0; TRB_SIZE];
         dma_bus.read_bulk(self.dequeue_pointer, &mut trb_buffer);
@@ -257,26 +298,8 @@ impl CommandRing {
 
         // TRB is fresh; try to parse
         let trb_result = CommandTrb::try_from(&trb_buffer[..]);
-        if let Ok(CommandTrb::Link(link_data)) = trb_result {
-            // encountered Link TRB
-            // update command ring status
-            self.dequeue_pointer = link_data.ring_segment_pointer;
-            if link_data.toggle_cycle {
-                self.cycle_state = !self.cycle_state;
-            }
-            // we still need to deliver the newest actual (non-link) TRB.
-            // Recursion is the simplest way to achieve the additional fetch,
-            // but the guest could cause a stack overflow. Is that a problem?
-            return self.next_command_trb(dma_bus);
-        }
 
-        let trb_address = self.dequeue_pointer;
-
-        // advance to next TRB
-        self.dequeue_pointer += TRB_SIZE as u64;
-
-        // return parsed result
-        Some((trb_address, trb_result))
+        Some(trb_result)
     }
 }
 
