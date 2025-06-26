@@ -219,9 +219,7 @@ impl CommandRing {
         }
     }
 
-    /// Request status of the Command Ring.
-    ///
-    /// Call this function when the driver reads from the CRCR register.
+    /// Returns the current value of the `CRCR` register.
     ///
     /// All bits are zero except the CRR bit, which indicates whether the
     /// command ring is running.
