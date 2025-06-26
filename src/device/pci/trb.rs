@@ -298,6 +298,14 @@ impl LinkTrbData {
     /// The function currently does not check if the slice respects all RsvdZ
     /// fields.
     fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+        let trb_type = trb_bytes[13] >> 2;
+        assert_eq!(
+            trb_types::LINK,
+            trb_type,
+            "LinkTrbData::parse called on TRB data with incorrect TRB type ({:#x})",
+            trb_type
+        );
+
         let rsp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let ring_segment_pointer = u64::from_le_bytes(rsp_bytes);
         let toggle_cycle = trb_bytes[12] & 0x2 != 0;
@@ -340,6 +348,14 @@ impl AddressDeviceCommandTrbData {
     /// The function currently does not check if the slice respects all RsvdZ
     /// fields.
     fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+        let trb_type = trb_bytes[13] >> 2;
+        assert_eq!(
+            trb_types::ADDRESS_DEVICE_COMMAND,
+            trb_type,
+            "AddressDeviceCommandTrbData::parse called on TRB data with incorrect TRB type ({:#x})",
+            trb_type
+        );
+
         let icp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let input_context_pointer = u64::from_le_bytes(icp_bytes);
 
