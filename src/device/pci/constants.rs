@@ -264,6 +264,10 @@ pub mod xhci {
         pub const ERSTBA_HI: u64 = IR0 + 0x14;
         pub const ERDP: u64 = IR0 + 0x18;
         pub const ERDP_HI: u64 = IR0 + 0x1c;
+
+        /// Relevant doorbell registers
+        pub const DOORBELL_CONTROLLER: u64 = 0x2000;
+        pub const DOORBELL_DEVICE: u64 = 0x2004;
     }
 
     /// Constants for the capability register.

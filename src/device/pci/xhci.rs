@@ -152,7 +152,7 @@ impl XhciController {
         }
     }
 
-    fn doorbell(&mut self) {
+    fn doorbell_controller(&mut self) {
         debug!("Ding Dong!");
         // check command available
         let next = self.command_ring.next_command_trb(self.dma_bus.clone());
@@ -236,7 +236,7 @@ impl PciDevice for Mutex<XhciController> {
                 .event_ring
                 .update_dequeue_pointer(value),
             offset::ERDP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
-            0x2000 => self.lock().unwrap().doorbell(),
+            offset::DOORBELL_CONTROLLER => self.lock().unwrap().doorbell_controller(),
             _ => todo!(),
         }
     }
@@ -253,7 +253,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::HCSPARAMS2 => 0, /* ERST Max size is a single segment */
             offset::HCSPARAMS3 => 0,
             offset::HCCPARAMS1 => capability::HCCPARAMS1,
-            offset::DBOFF => 0x2000,
+            offset::DBOFF => offset::DOORBELL_CONTROLLER,
             offset::RTSOFF => RUN_BASE,
             offset::HCCPARAMS2 => 0,
 
@@ -281,7 +281,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::ERSTBA_HI => 0,
             offset::ERDP => self.lock().unwrap().event_ring.read_dequeue_pointer(),
             offset::ERDP_HI => 0,
-            0x2000 => 0, // kernel reads the doorbell after write
+            offset::DOORBELL_CONTROLLER => 0, // kernel reads the doorbell after write
 
             // Everything else is Reserved Zero
             _ => todo!(),
