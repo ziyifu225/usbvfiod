@@ -3,11 +3,12 @@
 //! The specification is available
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
+use thiserror::Error;
+
 use super::constants::xhci::rings::{
     trb_types::{self, *},
     TRB_SIZE,
 };
-use core::fmt;
 
 /// Represents a TRB that the XHCI controller can place on the event ring.
 #[derive(Debug)]
@@ -376,41 +377,16 @@ impl AddressDeviceCommandTrbData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum TrbParseError {
+    #[error("Cannot parse TRB from a slice of {0} bytes. A TRB always has a size of 16 bytes.")]
     IncorrectSliceSize(usize),
+    #[error("TRB type {0} refers to \"{1}\", which is optional and not supported.")]
     UnsupportedOptionalCommand(u8, String),
+    #[error("TRB type {0} does not refer to any command.")]
     UnknownTrbType(u8),
+    #[error("Detected a non-zero value in a RsvdZ field")]
     RsvdZViolation,
-}
-
-impl std::error::Error for TrbParseError {}
-
-impl fmt::Display for TrbParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TrbParseError::IncorrectSliceSize(size) => {
-                write!(
-                            f,
-                            "Cannot parse TRB from a slice of {} bytes. A TRB always has a size of 16 bytes.",
-                            size
-                        )
-            }
-            TrbParseError::UnsupportedOptionalCommand(trb_type, cmd_name) => {
-                write!(
-                    f,
-                    "TRB type {} refers to \"{}\", which is optional and not supported.",
-                    trb_type, cmd_name
-                )
-            }
-            TrbParseError::UnknownTrbType(trb_type) => {
-                write!(f, "TRB type {} does not refer to any command.", trb_type)
-            }
-            TrbParseError::RsvdZViolation => {
-                write!(f, "Detected a non-zero value in a RsvdZ field")
-            }
-        }
-    }
 }
 
 #[cfg(test)]
