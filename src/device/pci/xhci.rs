@@ -169,7 +169,7 @@ impl XhciController {
         }
     }
 
-    fn handle_command(&mut self, address: u64, cmd: CommandTrb) {
+    fn handle_command(&self, address: u64, cmd: CommandTrb) {
         debug!("handling command {:?} at {:#x}", cmd, address);
         match cmd {
             CommandTrb::EnableSlotCommand => {

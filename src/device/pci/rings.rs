@@ -78,7 +78,7 @@ impl EventRing {
     ///
     /// - dma_bus: access to guest memory
     pub fn new(dma_bus: BusDeviceRef) -> Self {
-        EventRing {
+        Self {
             dma_bus,
             base_address: 0,
             dequeue_pointer: 0,
@@ -220,7 +220,7 @@ impl CommandRing {
     ///
     /// - dma_bus: access to guest memory
     pub fn new(dma_bus: BusDeviceRef) -> Self {
-        CommandRing {
+        Self {
             dma_bus,
             running: false,
             dequeue_pointer: 0,
@@ -269,6 +269,11 @@ impl CommandRing {
     ///
     /// All bits are zero except the CRR bit, which indicates whether the
     /// command ring is running.
+    //
+    // Right now, self.running is never changed, so clippy wants the function
+    // to be const. Once self.running is actually set, the deny statement can
+    // be removed.
+    #[allow(clippy::missing_const_for_fn)]
     pub fn status(&self) -> u64 {
         if self.running {
             crcr::CRR

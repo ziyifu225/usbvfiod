@@ -228,21 +228,21 @@ impl TryFrom<&[u8]> for CommandTrb {
         }
         let trb_type = bytes[13] >> 2;
         let command_trb = match trb_type {
-            trb_types::LINK => CommandTrb::Link(LinkTrbData::parse(bytes)?),
+            trb_types::LINK => Self::Link(LinkTrbData::parse(bytes)?),
             // EnableSlotCommand does not contain information apart from the
             // type; thus, no further parsing is necessary and we can just
             // return the enum variant.
-            trb_types::ENABLE_SLOT_COMMAND => CommandTrb::EnableSlotCommand,
-            trb_types::DISABLE_SLOT_COMMAND => CommandTrb::DisableSlotCommand,
+            trb_types::ENABLE_SLOT_COMMAND => Self::EnableSlotCommand,
+            trb_types::DISABLE_SLOT_COMMAND => Self::DisableSlotCommand,
             trb_types::ADDRESS_DEVICE_COMMAND => {
-                CommandTrb::AddressDeviceCommand(AddressDeviceCommandTrbData::parse(bytes)?)
+                Self::AddressDeviceCommand(AddressDeviceCommandTrbData::parse(bytes)?)
             }
-            trb_types::CONFIGURE_ENDPOINT_COMMAND => CommandTrb::ConfigureEndpointCommand,
-            trb_types::EVALUATE_CONTEXT_COMMAND => CommandTrb::EvaluateContextCommand,
-            trb_types::RESET_ENDPOINT_COMMAND => CommandTrb::ResetEndpointCommand,
-            trb_types::STOP_ENDPOINT_COMMAND => CommandTrb::StopEndpointCommand,
-            trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => CommandTrb::SetTrDequeuePointerCommand,
-            trb_types::RESET_DEVICE_COMMAND => CommandTrb::ResetDeviceCommand,
+            trb_types::CONFIGURE_ENDPOINT_COMMAND => Self::ConfigureEndpointCommand,
+            trb_types::EVALUATE_CONTEXT_COMMAND => Self::EvaluateContextCommand,
+            trb_types::RESET_ENDPOINT_COMMAND => Self::ResetEndpointCommand,
+            trb_types::STOP_ENDPOINT_COMMAND => Self::StopEndpointCommand,
+            trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => Self::SetTrDequeuePointerCommand,
+            trb_types::RESET_DEVICE_COMMAND => Self::ResetDeviceCommand,
             trb_types::FORCE_EVENT_COMMAND => {
                 return Err(TrbParseError::UnsupportedOptionalCommand(
                     18,
@@ -268,8 +268,8 @@ impl TryFrom<&[u8]> for CommandTrb {
                 ))
             }
 
-            trb_types::FORCE_HEADER_COMMAND => CommandTrb::ForceHeaderCommand,
-            trb_types::NO_OP_COMMAND => CommandTrb::NoOpCommand,
+            trb_types::FORCE_HEADER_COMMAND => Self::ForceHeaderCommand,
+            trb_types::NO_OP_COMMAND => Self::NoOpCommand,
             trb_type => return Err(TrbParseError::UnknownTrbType(trb_type)),
         };
         Ok(command_trb)
@@ -317,7 +317,7 @@ impl LinkTrbData {
             return Err(TrbParseError::RsvdZViolation);
         }
 
-        Ok(LinkTrbData {
+        Ok(Self {
             ring_segment_pointer,
             toggle_cycle,
         })
@@ -369,7 +369,7 @@ impl AddressDeviceCommandTrbData {
         let block_set_address_request = trb_bytes[13] & 0x2 != 0;
         let slot_id = trb_bytes[15];
 
-        Ok(AddressDeviceCommandTrbData {
+        Ok(Self {
             input_context_pointer,
             block_set_address_request,
             slot_id,
@@ -405,8 +405,7 @@ mod tests {
             "A valid TRB byte representation should be parsed successfully."
         );
         let trb = trb_result.unwrap();
-        if let CommandTrb::EnableSlotCommand = trb {
-        } else {
+        if !matches!(trb, CommandTrb::EnableSlotCommand) {
             panic!(
                 "A TRB with TRB type 9 should result in a CommandTrb::EnableSlotCommand. Got instead: {:?}",
                 trb
