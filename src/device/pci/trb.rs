@@ -292,7 +292,7 @@ impl LinkTrbData {
     /// the following assumptions to avoid duplicate checks:
     ///
     /// - `value` is a slice of size 16.
-    /// - The TRB type (upper 6 bit of byte 13) indicate a link TRB.
+    /// - The TRB type (upper 6 bit of byte 13) indicates a link TRB.
     ///
     /// # Limitations
     ///
@@ -311,7 +311,7 @@ impl LinkTrbData {
         let ring_segment_pointer = u64::from_le_bytes(rsp_bytes);
         let toggle_cycle = trb_bytes[12] & 0x2 != 0;
 
-        // the lowest for bit of the pointer are RsvdZ to ensure 16-byte
+        // the lowest four bit of the pointer are RsvdZ to ensure 16-byte
         // alignment.
         if ring_segment_pointer & 0xf != 0 {
             return Err(TrbParseError::RsvdZViolation);
@@ -342,7 +342,7 @@ impl AddressDeviceCommandTrbData {
     /// the following assumptions to avoid duplicate checks:
     ///
     /// - `value` is a slice of size 16.
-    /// - The TRB type (upper 6 bit of byte 13) indicate a link TRB.
+    /// - The TRB type (upper 6 bit of byte 13) indicates an address device TRB.
     ///
     /// # Limitations
     ///
@@ -360,7 +360,7 @@ impl AddressDeviceCommandTrbData {
         let icp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let input_context_pointer = u64::from_le_bytes(icp_bytes);
 
-        // the lowest for bit of the pointer are RsvdZ to ensure 16-byte
+        // the lowest four bit of the pointer are RsvdZ to ensure 16-byte
         // alignment.
         if input_context_pointer & 0xf != 0 {
             return Err(TrbParseError::RsvdZViolation);

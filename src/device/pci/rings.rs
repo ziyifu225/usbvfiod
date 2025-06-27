@@ -239,7 +239,7 @@ impl CommandRing {
     /// # Limitations
     ///
     /// The current implementation of this function is expecting to only be
-    /// called for initial setup. Any further writes (e.g., driver shopping the
+    /// called for initial setup. Any further writes (e.g., driver stopping the
     /// command ring because a command has timed out) are currently not handled
     /// properly.
     pub fn control(&mut self, value: u64) {
