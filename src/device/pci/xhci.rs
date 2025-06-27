@@ -269,7 +269,9 @@ impl PciDevice for Mutex<XhciController> {
                 .update_dequeue_pointer(value),
             offset::ERDP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::DOORBELL_CONTROLLER => self.lock().unwrap().doorbell_controller(),
-            _ => todo!(),
+            addr => {
+                todo!("unknown write {}", addr);
+            }
         }
     }
 
@@ -318,7 +320,9 @@ impl PciDevice for Mutex<XhciController> {
             offset::DOORBELL_CONTROLLER => 0, // kernel reads the doorbell after write
 
             // Everything else is Reserved Zero
-            _ => todo!(),
+            addr => {
+                todo!("unknown read {}", addr);
+            }
         }
     }
 
