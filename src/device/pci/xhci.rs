@@ -22,6 +22,7 @@ use crate::device::{
 
 use super::{
     config_space::BarInfo,
+    registers::PortscRegister,
     rings::{CommandRing, EventRing},
     trb::CommandTrb,
 };
@@ -60,6 +61,9 @@ pub struct XhciController {
 
     /// The interrupt line triggered to signal device events.
     interrupt_line: Arc<dyn InterruptLine>,
+
+    /// State of the PORTSC register
+    portsc: PortscRegister,
 }
 
 impl XhciController {
@@ -91,6 +95,9 @@ impl XhciController {
             interrupt_management: 0,
             interrupt_moderation_interval: runtime::IMOD_DEFAULT,
             interrupt_line: Arc::new(DummyInterruptLine::default()),
+            portsc: PortscRegister::new(
+                portsc::CCS | portsc::PED | portsc::PP | portsc::CSC | portsc::PEC | portsc::PRC,
+            ),
         }
     }
 
@@ -217,11 +224,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::DCBAAP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::CONFIG => self.lock().unwrap().enable_slots(value),
 
-            offset::PORTSC => assert_eq!(
-                value & !portsc::WAKE_ON_EVENTS,
-                portsc::DEFAULT,
-                "port reconfiguration not yet supported"
-            ),
+            offset::PORTSC => self.lock().unwrap().portsc.write(value),
 
             // xHC Runtime Registers
             offset::IMAN => self.lock().unwrap().interrupt_management = value,
@@ -269,7 +272,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::PAGESIZE => 0x1, /* 4k Pages */
             offset::CONFIG => self.lock().unwrap().config(),
 
-            offset::PORTSC => portsc::DEFAULT,
+            offset::PORTSC => self.lock().unwrap().portsc.read(),
             offset::PORTLI => 0,
 
             // xHC Runtime Registers
