@@ -71,6 +71,7 @@ impl XhciController {
     pub fn new(dma_bus: BusDeviceRef) -> Self {
         use crate::device::pci::constants::config_space::*;
 
+        let dma_bus_for_command_ring = dma_bus.clone();
         let dma_bus_for_event_ring = dma_bus.clone();
 
         Self {
@@ -83,7 +84,7 @@ impl XhciController {
                 .msix_capability(MAX_INTRS.try_into().unwrap(), 3, 0, 3, 0x1000)
                 .config_space(),
             running: false,
-            command_ring: CommandRing::default(),
+            command_ring: CommandRing::new(dma_bus_for_command_ring),
             event_ring: EventRing::new(dma_bus_for_event_ring),
             slots: vec![],
             device_contexts: vec![],
@@ -157,7 +158,7 @@ impl XhciController {
     fn doorbell_controller(&mut self) {
         debug!("Ding Dong!");
         // check command available
-        let next = self.command_ring.next_command_trb(self.dma_bus.clone());
+        let next = self.command_ring.next_command_trb();
         if let Some((address, Ok(cmd_trb))) = next {
             self.handle_command(address, cmd_trb);
         } else {

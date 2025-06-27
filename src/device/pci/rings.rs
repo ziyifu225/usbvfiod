@@ -181,8 +181,13 @@ impl EventRing {
 
 /// The Command Ring: A unidirectional means of communication, allowing the
 /// driver to send commands to the XHCI controller.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct CommandRing {
+    /// Access to guest memory.
+    ///
+    /// The Command Ring lives in guest memory and we need DMA access to
+    /// retrieve commands from the ring.
+    dma_bus: BusDeviceRef,
     /// The controller's running state.
     ///
     /// This flag should be true when the controller is started (R/S bit ==1)
@@ -209,6 +214,20 @@ pub struct CommandRing {
 }
 
 impl CommandRing {
+    /// Create a new Command Ring.
+    ///
+    /// # Parameters
+    ///
+    /// - dma_bus: access to guest memory
+    pub fn new(dma_bus: BusDeviceRef) -> Self {
+        CommandRing {
+            dma_bus,
+            running: false,
+            dequeue_pointer: 0,
+            cycle_state: false,
+        }
+    }
+
     /// Control the Command Ring.
     ///
     /// Call this function when the driver writes to the CRCR register.
@@ -264,13 +283,10 @@ impl CommandRing {
     /// i.e., it will not return Link TRBs. Instead, Link TRBs are handled
     /// correctly, which is the reason why the function reads two TRBs to
     /// return a single one.
-    pub fn next_command_trb(
-        &mut self,
-        dma_bus: BusDeviceRef,
-    ) -> Option<(u64, Result<CommandTrb, TrbParseError>)> {
+    pub fn next_command_trb(&mut self) -> Option<(u64, Result<CommandTrb, TrbParseError>)> {
         // retrieve TRB at dequeue pointer and return None if there is no fresh
         // TRB
-        let first_trb_result = self.next_trb(dma_bus.clone())?;
+        let first_trb_result = self.next_trb()?;
         // special handling for Link TRBs
         let trb_result = if let Ok(CommandTrb::Link(link_data)) = first_trb_result {
             // encountered Link TRB
@@ -280,7 +296,7 @@ impl CommandRing {
                 self.cycle_state = !self.cycle_state;
             }
             // lookup first TRB in the new memory segment
-            let second_trb_result = self.next_trb(dma_bus.clone())?;
+            let second_trb_result = self.next_trb()?;
             if let Ok(CommandTrb::Link(_)) = second_trb_result {
                 panic!("Link TRB should not follow directly after another Link TRB");
             }
@@ -303,10 +319,11 @@ impl CommandRing {
     /// If there is a fresh TRB at the dequeue pointer, the function tries to
     /// parse the command TRB and returns the result. If there is a fresh Link
     /// TRB, this function will return it!
-    fn next_trb(&self, dma_bus: BusDeviceRef) -> Option<Result<CommandTrb, TrbParseError>> {
+    fn next_trb(&self) -> Option<Result<CommandTrb, TrbParseError>> {
         // retrieve TRB at current dequeue_pointer
         let mut trb_buffer = vec![0; TRB_SIZE];
-        dma_bus.read_bulk(self.dequeue_pointer, &mut trb_buffer);
+        self.dma_bus
+            .read_bulk(self.dequeue_pointer, &mut trb_buffer);
 
         debug!(
             "interpreting TRB at dequeue pointer; cycle state = {}, TRB = {:?}",
@@ -384,11 +401,11 @@ mod tests {
 
         // construct memory segment for a ring that can contain 4 TRBs
         let ram = Arc::new(BulkOnlyDevice::new(&[0; 16 * 4]));
-        let mut command_ring = CommandRing::default();
+        let mut command_ring = CommandRing::new(ram.clone());
         command_ring.control(0x1);
 
         // the ring is still empty
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         assert!(
             trb.is_none(),
             "When no fresh command is on the command ring, next_command_trb should return None, instead got: {:?}",
@@ -401,7 +418,7 @@ mod tests {
         ram.write_bulk(12, &[0x1]);
 
         // ring abstraction should parse correctly
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
             assert_eq!(0, address, "incorrect address of the next TRB returned");
         } else {
@@ -409,7 +426,7 @@ mod tests {
         }
 
         // no new command placed, should return no new command
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         assert!(
             trb.is_none(),
             "When no fresh command is on the command ring, next_command_trb should return None, instead got: {:?}",
@@ -423,7 +440,7 @@ mod tests {
         ram.write_bulk(32 + 12, &[0x1]);
 
         // parse first noop
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
             assert_eq!(16, address, "incorrect address of the next TRB returned");
         } else {
@@ -431,7 +448,7 @@ mod tests {
         }
 
         // parse second noop
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
             assert_eq!(32, address, "incorrect address of the next TRB returned");
         } else {
@@ -439,7 +456,7 @@ mod tests {
         }
 
         // no new command placed, should return no new command
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         assert!(
             trb.is_none(),
             "When no fresh command is on the command ring, next_command_trb should return None, instead got: {:?}",
@@ -455,7 +472,7 @@ mod tests {
         // state should have toggled to false. The dequeue_pointer now points at the first written
         // noop command. Cycle bits don't match, so the command ring should not report a new
         // command.
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         assert!(
             trb.is_none(),
             "When no fresh command is on the command ring, next_command_trb should return None, instead got: {:?}",
@@ -466,7 +483,7 @@ mod tests {
         ram.write_bulk(12, &[0x0]);
 
         // parse refreshed noop
-        let trb = command_ring.next_command_trb(ram.clone());
+        let trb = command_ring.next_command_trb();
         if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
             assert_eq!(0, address, "incorrect address of the next TRB returned");
         } else {
