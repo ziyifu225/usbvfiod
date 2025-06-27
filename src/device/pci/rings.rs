@@ -22,8 +22,13 @@ use crate::device::{
 /// This implementation is a simplified version of the full mechanism specified
 /// in the XHCI specification. We assume that the Event Ring Segment Table only
 /// holds a single segment.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct EventRing {
+    /// Access to guest memory.
+    ///
+    /// The Event Ring lives in guest memory and we need DMA access to write
+    /// events to the ring.
+    dma_bus: BusDeviceRef,
     /// The address of the Event Ring Segment Table.
     ///
     /// This field directly corresponds with the ERSTBA register(s) in the
@@ -67,6 +72,22 @@ pub struct EventRing {
 }
 
 impl EventRing {
+    /// Create a new Event Ring.
+    ///
+    /// # Parameters
+    ///
+    /// - dma_bus: access to guest memory
+    pub fn new(dma_bus: BusDeviceRef) -> Self {
+        EventRing {
+            dma_bus,
+            base_address: 0,
+            dequeue_pointer: 0,
+            enqueue_pointer: 0,
+            trb_count: 0,
+            cycle_state: false,
+        }
+    }
+
     /// Configure the Event Ring.
     ///
     /// Call this function when the driver writes to the ERSTBA register (as
@@ -78,13 +99,16 @@ impl EventRing {
     /// # Parameters
     ///
     /// - `erstba`: base address of the Event Ring Segment Table
-    /// - `dma_bus`: the bus to use for DMA accesses
-    pub fn configure(&mut self, erstba: u64, dma_bus: BusDeviceRef) {
+    pub fn configure(&mut self, erstba: u64) {
         assert_eq!(erstba & 0x3f, 0, "unaligned event ring base address");
 
         self.base_address = erstba;
-        self.enqueue_pointer = dma_bus.read(Request::new(erstba + BASE_ADDR, RequestSize::Size8));
-        self.trb_count = dma_bus.read(Request::new(erstba + SIZE, RequestSize::Size4)) as u32;
+        self.enqueue_pointer = self
+            .dma_bus
+            .read(Request::new(erstba + BASE_ADDR, RequestSize::Size8));
+        self.trb_count = self
+            .dma_bus
+            .read(Request::new(erstba + SIZE, RequestSize::Size4)) as u32;
         self.cycle_state = true;
 
         debug!("event ring segment table is at {:#x}", erstba);
@@ -128,13 +152,13 @@ impl EventRing {
     /// # Parameters
     ///
     /// - `trb`: the TRB to enqueue.
-    /// - `dma_bus`: the bus to use for DMA accesses
-    pub fn enqueue(&mut self, trb: &EventTrb, dma_bus: BusDeviceRef) {
+    pub fn enqueue(&mut self, trb: &EventTrb) {
         if self.check_event_ring_full() {
             todo!();
         }
 
-        dma_bus.write_bulk(self.enqueue_pointer, &trb.to_bytes(self.cycle_state));
+        self.dma_bus
+            .write_bulk(self.enqueue_pointer, &trb.to_bytes(self.cycle_state));
 
         let enqueue_address = self.enqueue_pointer;
 

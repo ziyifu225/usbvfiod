@@ -71,6 +71,8 @@ impl XhciController {
     pub fn new(dma_bus: BusDeviceRef) -> Self {
         use crate::device::pci::constants::config_space::*;
 
+        let dma_bus_for_event_ring = dma_bus.clone();
+
         Self {
             dma_bus,
             config_space: ConfigSpaceBuilder::new(vendor::REDHAT, device::REDHAT_XHCI)
@@ -82,7 +84,7 @@ impl XhciController {
                 .config_space(),
             running: false,
             command_ring: CommandRing::default(),
-            event_ring: EventRing::default(),
+            event_ring: EventRing::new(dma_bus_for_event_ring),
             slots: vec![],
             device_contexts: vec![],
             interrupt_management: 0,
@@ -140,7 +142,7 @@ impl XhciController {
             // Send a port status change event, which signals the driver to
             // inspect the PORTSC status register.
             let trb = EventTrb::new_port_status_change_event_trb(0);
-            self.event_ring.enqueue(&trb, self.dma_bus.clone());
+            self.event_ring.enqueue(&trb);
 
             // XXX: This is just a test to see if we can generate interrupts.
             // This will be removed once we generate interrupts in the right
@@ -224,11 +226,7 @@ impl PciDevice for Mutex<XhciController> {
             offset::IMAN => self.lock().unwrap().interrupt_management = value,
             offset::IMOD => self.lock().unwrap().interrupt_moderation_interval = value,
             offset::ERSTSZ => assert_eq!(value, 1, "only a single segment supported"),
-            offset::ERSTBA => {
-                let mut xhci = self.lock().unwrap();
-                let dma_bus = xhci.dma_bus.clone();
-                xhci.event_ring.configure(value, dma_bus)
-            }
+            offset::ERSTBA => self.lock().unwrap().event_ring.configure(value),
             offset::ERSTBA_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::ERDP => self
                 .lock()
