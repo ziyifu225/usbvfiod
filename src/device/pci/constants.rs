@@ -322,6 +322,18 @@ pub mod xhci {
             pub const DR: u64 = 0x40000000;
             pub const WPR: u64 = 0x80000000;
         }
+
+        pub mod usbsts {
+            pub const HCH: u64 = 0x1;
+            pub const HSE: u64 = 0x4;
+            pub const EINT: u64 = 0x8;
+            pub const PCD: u64 = 0x10;
+            pub const SSS: u64 = 0x100;
+            pub const RSS: u64 = 0x200;
+            pub const SRE: u64 = 0x400;
+            pub const CNR: u64 = 0x800;
+            pub const HCE: u64 = 0x1000;
+        }
     }
 
     /// Constants for the runtime registers.
