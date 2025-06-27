@@ -264,6 +264,10 @@ pub mod xhci {
         pub const ERSTBA_HI: u64 = IR0 + 0x14;
         pub const ERDP: u64 = IR0 + 0x18;
         pub const ERDP_HI: u64 = IR0 + 0x1c;
+
+        /// Relevant doorbell registers
+        pub const DOORBELL_CONTROLLER: u64 = 0x2000;
+        pub const DOORBELL_DEVICE: u64 = 0x2004;
     }
 
     /// Constants for the capability register.
@@ -291,6 +295,7 @@ pub mod xhci {
             pub const RCS: u64 = 0x1;
             pub const CS: u64 = 0x2;
             pub const CA: u64 = 0x4;
+            pub const CRR: u64 = 0x8;
         }
 
         pub mod portsc {
@@ -319,6 +324,9 @@ pub mod xhci {
 
     /// Constants for the rings
     pub mod rings {
+        /// TRB size in bytes
+        pub const TRB_SIZE: usize = 16;
+
         /// The identifiers of transfer request blocks
         pub mod trb_types {
             pub const NORMAL: u8 = 1;
