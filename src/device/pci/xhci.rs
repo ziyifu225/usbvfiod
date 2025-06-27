@@ -23,6 +23,7 @@ use crate::device::{
 use super::{
     config_space::BarInfo,
     constants::xhci::operational::usbsts,
+    device_slots::DeviceSlotManager,
     registers::PortscRegister,
     rings::{CommandRing, EventRing},
     trb::CommandTrb,
@@ -47,12 +48,8 @@ pub struct XhciController {
     /// The Event Ring of the single Interrupt Register Set.
     event_ring: EventRing,
 
-    /// Configured device slots.
-    slots: Vec<()>,
-
-    /// Device Context Array
-    /// TODO: currently just the raw pointer configured by the OS
-    device_contexts: Vec<u64>,
+    /// Device Slot Management
+    device_slot_manager: DeviceSlotManager,
 
     /// Interrupt management register
     interrupt_management: u64,
@@ -78,6 +75,7 @@ impl XhciController {
 
         let dma_bus_for_command_ring = dma_bus.clone();
         let dma_bus_for_event_ring = dma_bus.clone();
+        let dma_bus_for_device_slot_manager = dma_bus.clone();
 
         Self {
             dma_bus,
@@ -91,8 +89,7 @@ impl XhciController {
             running: false,
             command_ring: CommandRing::new(dma_bus_for_command_ring),
             event_ring: EventRing::new(dma_bus_for_event_ring),
-            slots: vec![],
-            device_contexts: vec![],
+            device_slot_manager: DeviceSlotManager::new(MAX_SLOTS, dma_bus_for_device_slot_manager),
             interrupt_management: 0,
             interrupt_moderation_interval: runtime::IMOD_DEFAULT,
             interrupt_line: Arc::new(DummyInterruptLine::default()),
@@ -117,17 +114,18 @@ impl XhciController {
 
     /// Obtain the current host controller configuration as defined for the `CONFIG` register.
     #[must_use]
-    pub fn config(&self) -> u64 {
-        u64::try_from(self.slots.len()).unwrap() & 0x8u64
+    pub const fn config(&self) -> u64 {
+        self.device_slot_manager.num_slots & 0x8u64
     }
 
     /// Enable device slots.
-    pub fn enable_slots(&mut self, count: u64) {
-        assert!(count <= MAX_SLOTS);
+    pub fn enable_slots(&self, count: u64) {
+        assert!(
+            count == self.device_slot_manager.num_slots,
+            "we expect the driver to enable all slots that we report"
+        );
 
-        self.slots = (0..count).map(|_| ()).collect();
-
-        debug!("enabled {} device slots", self.slots.len());
+        debug!("enabled {} device slots", count);
     }
 
     /// Configure the device context array from the array base pointer.
@@ -136,8 +134,8 @@ impl XhciController {
             "configuring device contexts from pointer {:#x}",
             device_context_base_array_ptr
         );
-        self.device_contexts.clear();
-        self.device_contexts.push(device_context_base_array_ptr);
+        self.device_slot_manager
+            .set_dcbaap(device_context_base_array_ptr);
     }
 
     /// Start/Stop controller operation
