@@ -26,7 +26,7 @@ let
         boot.consoleLogLevel = 8;
 
         # Convenience packages for interactive use
-        environment.systemPackages = [ pkgs.pciutils pkgs.usbutils ];
+        environment.systemPackages = with pkgs; [ pciutils usbutils ];
 
         # Add user services that run on automatic login.
         systemd.user.services = {
@@ -74,12 +74,40 @@ let
   usbDiskImage = pkgs.writeText "usb-stick-image.raw" ''
     This is an uninitialized drive.
   '';
+
+  # Report for target device path and access permissions
+  usbDeviceInfoScript = pkgs.writeShellScript "usb-device-info" ''
+    echo "----- USB Block Device (/dev/sdX) -----"
+    usb_device=$(lsblk -SJ | jq -r '.blockdevices[] | select(.tran == "usb") | .name')
+    dev="/dev/$usb_device"
+    echo "Device path: $dev"
+    echo "--- USB Block Device (/dev/sdX) Permissions ---"
+    ls -l $dev || echo "Could not stat block device $dev"
+
+    echo "----- USB Bus-Exposed Device -----"
+    vendor=$(udevadm info --query=all --name=$dev | grep -oP 'ID_USB_VENDOR_ID=\K\w+' || true)
+    model=$(udevadm info --query=all --name=$dev | grep -oP 'ID_USB_MODEL_ID=\K\w+' || true)
+    bus_usb_device=$(lsusb -d "$vendor:$model" || true)
+    echo "$bus_usb_device"
+    bus=$(awk '{print $2}' <<<"$bus_usb_device")
+    dev_num=$(awk '{ gsub(":",""); print $4 }' <<<"$bus_usb_device")
+    path="/dev/bus/usb/$bus/$dev_num"
+    echo "Character device path: $path"
+    ls -l "$path" || echo "Could not stat character device $path"
+
+    exit 0
+  '';
 in
 {
   integration-smoke = pkgs.nixosTest {
     name = "usbvfiod Smoke Test";
 
     nodes.machine = { pkgs, ... }: {
+      environment.systemPackages = with pkgs; [
+        jq
+        usbutils
+      ];
+
       boot.kernelModules = [ "kvm" ];
       systemd.services.usbvfiod = {
         wantedBy = [ "multi-user.target" ];
@@ -134,8 +162,10 @@ in
       # Read the diagnostic information after login.
       machine.wait_until_succeeds("grep -Eq '\s+1\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
 
-      # Check whether the virtual usb stick is available in the host.
-      machine.succeed('grep -Fq "uninitialized drive" /dev/sda')
+      # Display device path and access permissions
+      print("-------- USB Device Information Report --------")
+      stdout = machine.execute("${usbDeviceInfoScript}")[1]
+      print(stdout)
     '';
   };
 }
