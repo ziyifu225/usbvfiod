@@ -193,6 +193,11 @@ in
     testScript = ''
       start_all()
 
+      # Display device path and access permissions
+      print("-------- USB Device Information Report --------")
+      stdout = machine.execute("${usbDeviceInfoScript}")[1]
+      print(stdout)
+
       machine.wait_for_unit("cloud-hypervisor.service")
 
       # Check whether the USB controller pops up.
@@ -201,11 +206,6 @@ in
 
       # Read the diagnostic information after login.
       machine.wait_until_succeeds("grep -Eq '\s+1\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
-
-      # Display device path and access permissions
-      print("-------- USB Device Information Report --------")
-      stdout = machine.execute("${usbDeviceInfoScript}")[1]
-      print(stdout)
     '';
   };
 }
