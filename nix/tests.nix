@@ -132,6 +132,12 @@ in
         ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="teststorage"
       '';
 
+      users.users.testUser = {
+        isNormalUser = true;
+        extraGroups = [ ];
+        password = "test";
+      };
+
       boot.kernelModules = [ "kvm" ];
       systemd.services = {
         detect-usb-device = {
@@ -151,6 +157,8 @@ in
           requires = [ "detect-usb-device.service" ];
 
           serviceConfig = {
+            User = "testUser";
+            Group = "users";
             EnvironmentFile = "/run/usbvfiod.env";
             ExecStart = ''
               ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "$USBVFIOD_DEVICE"
@@ -193,6 +201,11 @@ in
     testScript = ''
       start_all()
 
+      # Display device path and access permissions
+      print("-------- USB Device Information Report --------")
+      stdout = machine.execute("${usbDeviceInfoScript}")[1]
+      print(stdout)
+
       machine.wait_for_unit("cloud-hypervisor.service")
 
       # Check whether the USB controller pops up.
@@ -201,11 +214,6 @@ in
 
       # Read the diagnostic information after login.
       machine.wait_until_succeeds("grep -Eq '\s+1\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
-
-      # Display device path and access permissions
-      print("-------- USB Device Information Report --------")
-      stdout = machine.execute("${usbDeviceInfoScript}")[1]
-      print(stdout)
     '';
   };
 }
