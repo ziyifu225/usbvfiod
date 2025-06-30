@@ -129,7 +129,7 @@ in
       ];
 
       services.udev.extraRules = ''
-        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="teststorage"
+        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="bus/usb/teststorage"
       '';
 
       users.users.testUser = {
@@ -157,11 +157,11 @@ in
           requires = [ "detect-usb-device.service" ];
 
           serviceConfig = {
-            User = "testUser";
-            Group = "users";
-            EnvironmentFile = "/run/usbvfiod.env";
+            # User = "testUser";
+            # Group = "users";
+            # EnvironmentFile = "/run/usbvfiod.env";         
             ExecStart = ''
-              ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "$USBVFIOD_DEVICE"
+              ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "/dev/bus/usb/teststorage"
             '';
           };
         };
