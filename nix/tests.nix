@@ -69,6 +69,8 @@ let
   # well.
   usbvfiodSocket = "/tmp/usbvfio";
   cloudHypervisorLog = "/tmp/chv.log";
+  vendorId = "46f4";
+  productId = "0001";
 
   # Provide a raw file as usb stick test image.
   usbDiskImage = pkgs.writeText "usb-stick-image.raw" ''
@@ -97,6 +99,24 @@ let
 
     exit 0
   '';
+
+  # detect USB device with Symlink
+  detectUsbScript = pkgs.writeShellScript "detect-usb" ''
+    set -euxo pipefail
+    for i in {1..10}; do
+      [ -L /dev/teststorage ] && break
+      sleep 0.5
+    done
+
+    [ -L /dev/teststorage ] || {
+      echo "Symlink /dev/teststorage not found" >&2
+      exit 0
+    }
+
+    resolved=$(readlink -f /dev/teststorage)
+    echo "Found USB device at $resolved"
+    echo "USBVFIOD_DEVICE=$resolved" > /run/usbvfiod.env
+  '';
 in
 {
   integration-smoke = pkgs.nixosTest {
@@ -108,30 +128,50 @@ in
         usbutils
       ];
 
+      services.udev.extraRules = ''
+        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="teststorage"
+      '';
+
       boot.kernelModules = [ "kvm" ];
-      systemd.services.usbvfiod = {
-        wantedBy = [ "multi-user.target" ];
+      systemd.services = {
+        detect-usb-device = {
+          wantedBy = [ "multi-user.target" ];
+          before = [ "usbvfiod.service" ];
 
-        serviceConfig = {
-          ExecStart = ''
-            ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket}
-          '';
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = detectUsbScript;
+          };
         };
-      };
 
-      systemd.services.cloud-hypervisor = {
-        wantedBy = [ "multi-user.target" ];
-        requires = [ "usbvfiod.service" ];
-        after = [ "usbvfiod.service" ];
+        usbvfiod = {
+          wantedBy = [ "multi-user.target" ];
+          after = [ "detect-usb-device.service" ];
+          requires = [ "detect-usb-device.service" ];
 
-        serviceConfig = {
-          ExecStart = ''
-            ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
-              --kernel ${netboot.kernel} \
-              --cmdline ${lib.escapeShellArg netboot.cmdline} \
-              --initramfs ${netboot.initrd} \
-              --user-device socket=${usbvfiodSocket}
-          '';
+          serviceConfig = {
+            EnvironmentFile = "/run/usbvfiod.env";
+            ExecStart = ''
+              ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "$USBVFIOD_DEVICE"
+            '';
+          };
+        };
+
+        cloud-hypervisor = {
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "usbvfiod.service" ];
+          after = [ "usbvfiod.service" ];
+
+          serviceConfig = {
+            ExecStart = ''
+              ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
+                --kernel ${netboot.kernel} \
+                --cmdline ${lib.escapeShellArg netboot.cmdline} \
+                --initramfs ${netboot.initrd} \
+                --user-device socket=${usbvfiodSocket}
+            '';
+          };
         };
       };
 
