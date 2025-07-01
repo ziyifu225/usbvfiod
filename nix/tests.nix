@@ -111,8 +111,16 @@ in
       ];
 
       services.udev.extraRules = ''
-        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="bus/usb/teststorage"
+        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", MODE="0664", GROUP="usbaccess", SYMLINK+="bus/usb/teststorage"
       '';
+
+      users.groups.usbaccess = { };
+
+      users.users.testUser = {
+        isNormalUser = true;
+        extraGroups = [ "usbaccess" ];
+        password = "test";
+      };
 
       boot.kernelModules = [ "kvm" ];
       systemd.services = {
@@ -120,6 +128,8 @@ in
           wantedBy = [ "multi-user.target" ];
 
           serviceConfig = {
+            User = "testUser";
+            Group = "usbaccess";
             ExecStart = ''
               ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "/dev/bus/usb/teststorage"
             '';
