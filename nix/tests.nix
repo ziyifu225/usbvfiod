@@ -116,10 +116,9 @@ in
 
       users.groups.usbaccess = { };
 
-      users.users.testUser = {
-        isNormalUser = true;
-        extraGroups = [ "usbaccess" ];
-        password = "test";
+      users.users.usbaccess = {
+        isSystemUser = true;
+        group = "usbaccess";
       };
 
       boot.kernelModules = [ "kvm" ];
@@ -128,7 +127,7 @@ in
           wantedBy = [ "multi-user.target" ];
 
           serviceConfig = {
-            User = "testUser";
+            User = "usbaccess";
             Group = "usbaccess";
             ExecStart = ''
               ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "/dev/bus/usb/teststorage"
