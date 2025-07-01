@@ -99,24 +99,6 @@ let
 
     exit 0
   '';
-
-  # detect USB device with Symlink
-  detectUsbScript = pkgs.writeShellScript "detect-usb" ''
-    set -euxo pipefail
-    for i in {1..10}; do
-      [ -L /dev/teststorage ] && break
-      sleep 0.5
-    done
-
-    [ -L /dev/teststorage ] || {
-      echo "Symlink /dev/teststorage not found" >&2
-      exit 0
-    }
-
-    resolved=$(readlink -f /dev/teststorage)
-    echo "Found USB device at $resolved"
-    echo "USBVFIOD_DEVICE=$resolved" > /run/usbvfiod.env
-  '';
 in
 {
   integration-smoke = pkgs.nixosTest {
@@ -129,31 +111,17 @@ in
       ];
 
       services.udev.extraRules = ''
-        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="teststorage"
+        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", SYMLINK+="bus/usb/teststorage"
       '';
 
       boot.kernelModules = [ "kvm" ];
       systemd.services = {
-        detect-usb-device = {
-          wantedBy = [ "multi-user.target" ];
-          before = [ "usbvfiod.service" ];
-
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-            ExecStart = detectUsbScript;
-          };
-        };
-
         usbvfiod = {
           wantedBy = [ "multi-user.target" ];
-          after = [ "detect-usb-device.service" ];
-          requires = [ "detect-usb-device.service" ];
 
           serviceConfig = {
-            EnvironmentFile = "/run/usbvfiod.env";
             ExecStart = ''
-              ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "$USBVFIOD_DEVICE"
+              ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "/dev/bus/usb/teststorage"
             '';
           };
         };
