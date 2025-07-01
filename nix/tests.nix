@@ -69,6 +69,8 @@ let
   # well.
   usbvfiodSocket = "/tmp/usbvfio";
   cloudHypervisorLog = "/tmp/chv.log";
+  vendorId = "46f4";
+  productId = "0001";
 
   # Provide a raw file as usb stick test image.
   usbDiskImage = pkgs.writeText "usb-stick-image.raw" ''
@@ -108,30 +110,46 @@ in
         usbutils
       ];
 
-      boot.kernelModules = [ "kvm" ];
-      systemd.services.usbvfiod = {
-        wantedBy = [ "multi-user.target" ];
+      services.udev.extraRules = ''
+        ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="${vendorId}", ATTRS{idProduct}=="${productId}", MODE="0660", GROUP="usbaccess", SYMLINK+="bus/usb/teststorage"
+      '';
 
-        serviceConfig = {
-          ExecStart = ''
-            ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket}
-          '';
-        };
+      users.groups.usbaccess = { };
+
+      users.users.testUser = {
+        isNormalUser = true;
+        extraGroups = [ "usbaccess" ];
+        password = "test";
       };
 
-      systemd.services.cloud-hypervisor = {
-        wantedBy = [ "multi-user.target" ];
-        requires = [ "usbvfiod.service" ];
-        after = [ "usbvfiod.service" ];
+      boot.kernelModules = [ "kvm" ];
+      systemd.services = {
+        usbvfiod = {
+          wantedBy = [ "multi-user.target" ];
 
-        serviceConfig = {
-          ExecStart = ''
-            ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
-              --kernel ${netboot.kernel} \
-              --cmdline ${lib.escapeShellArg netboot.cmdline} \
-              --initramfs ${netboot.initrd} \
-              --user-device socket=${usbvfiodSocket}
-          '';
+          serviceConfig = {
+            User = "testUser";
+            Group = "usbaccess";
+            ExecStart = ''
+              ${lib.getExe usbvfiod} -v --socket-path ${usbvfiodSocket} --device "/dev/bus/usb/teststorage"
+            '';
+          };
+        };
+
+        cloud-hypervisor = {
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "usbvfiod.service" ];
+          after = [ "usbvfiod.service" ];
+
+          serviceConfig = {
+            ExecStart = ''
+              ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
+                --kernel ${netboot.kernel} \
+                --cmdline ${lib.escapeShellArg netboot.cmdline} \
+                --initramfs ${netboot.initrd} \
+                --user-device socket=${usbvfiodSocket}
+            '';
+          };
         };
       };
 
@@ -153,6 +171,11 @@ in
     testScript = ''
       start_all()
 
+      # Display device path and access permissions
+      print("-------- USB Device Information Report --------")
+      stdout = machine.execute("${usbDeviceInfoScript}")[1]
+      print(stdout)
+
       machine.wait_for_unit("cloud-hypervisor.service")
 
       # Check whether the USB controller pops up.
@@ -161,11 +184,6 @@ in
 
       # Read the diagnostic information after login.
       machine.wait_until_succeeds("grep -Eq '\s+1\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
-
-      # Display device path and access permissions
-      print("-------- USB Device Information Report --------")
-      stdout = machine.execute("${usbDeviceInfoScript}")[1]
-      print(stdout)
     '';
   };
 }
