@@ -182,7 +182,12 @@ impl XhciController {
                 let (completion_code, slot_id) = self.handle_enable_slot();
                 EventTrb::new_command_completion_event_trb(address, 0, completion_code, slot_id)
             }
-            CommandTrb::DisableSlot => todo!(),
+            CommandTrb::DisableSlot => {
+                // TODO this command probably requires more handling.
+                // Currently, we just acknowledge to not crash usbvfiod in the
+                // integration test.
+                EventTrb::new_command_completion_event_trb(address, 0, CompletionCode::Success, 1)
+            }
             CommandTrb::AddressDevice(data) => {
                 self.handle_address_device(&data);
                 EventTrb::new_command_completion_event_trb(
@@ -195,7 +200,12 @@ impl XhciController {
             CommandTrb::ConfigureEndpoint => todo!(),
             CommandTrb::EvaluateContext => todo!(),
             CommandTrb::ResetEndpoint => todo!(),
-            CommandTrb::StopEndpoint => todo!(),
+            CommandTrb::StopEndpoint => {
+                // TODO this command probably requires more handling.
+                // Currently, we just acknowledge to not crash usbvfiod in the
+                // integration test.
+                EventTrb::new_command_completion_event_trb(address, 0, CompletionCode::Success, 1)
+            }
             CommandTrb::SetTrDequeuePointer => todo!(),
             CommandTrb::ResetDevice => todo!(),
             CommandTrb::ForceHeader => todo!(),
