@@ -299,20 +299,40 @@ pub mod xhci {
         }
 
         pub mod portsc {
-            /// Port power should always be enabled.
-            /// Software can only disable it.
-            const PP: u64 = 1 << 9;
-            const PLS_RXDETECT: u64 = 0x5 << 5;
+            pub const CCS: u64 = 0x1;
+            pub const PED: u64 = 0x2;
+            pub const OCA: u64 = 0x8;
+            pub const PR: u64 = 0x10;
+            pub const PLS: u64 = 0x1e0;
+            pub const PP: u64 = 0x200;
+            pub const PORT_SPEED: u64 = 0x3c00;
+            pub const PIC: u64 = 0xc000;
+            pub const LWS: u64 = 0x10000;
+            pub const CSC: u64 = 0x20000;
+            pub const PEC: u64 = 0x40000;
+            pub const WRC: u64 = 0x80000;
+            pub const OCC: u64 = 0x100000;
+            pub const PRC: u64 = 0x200000;
+            pub const PLC: u64 = 0x400000;
+            pub const CEC: u64 = 0x800000;
+            pub const CAS: u64 = 0x1000000;
+            pub const WCE: u64 = 0x2000000;
+            pub const WDE: u64 = 0x4000000;
+            pub const WOE: u64 = 0x8000000;
+            pub const DR: u64 = 0x40000000;
+            pub const WPR: u64 = 0x80000000;
+        }
 
-            /// Generate system wake-on events for device connect.
-            const WCE: u64 = 1 << 25;
-            /// Generate system wake-on events for device disconnect.
-            const WDE: u64 = 1 << 26;
-            /// Generate system wake-on events for over-current conditions.
-            const WOE: u64 = 1 << 27;
-            pub const WAKE_ON_EVENTS: u64 = WCE | WDE | WOE;
-
-            pub const DEFAULT: u64 = PP | PLS_RXDETECT;
+        pub mod usbsts {
+            pub const HCH: u64 = 0x1;
+            pub const HSE: u64 = 0x4;
+            pub const EINT: u64 = 0x8;
+            pub const PCD: u64 = 0x10;
+            pub const SSS: u64 = 0x100;
+            pub const RSS: u64 = 0x200;
+            pub const SRE: u64 = 0x400;
+            pub const CNR: u64 = 0x800;
+            pub const HCE: u64 = 0x1000;
         }
     }
 

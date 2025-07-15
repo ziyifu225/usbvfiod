@@ -4,15 +4,20 @@
 //! The specification is available
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
+use thiserror::Error;
 use tracing::{debug, trace, warn};
 
-use super::trb::{CommandTrb, EventTrb, TrbParseError};
+use super::{
+    device_slots::EndpointContext,
+    trb::{CommandTrb, EventTrb, TransferTrb, TrbParseError},
+    usbrequest::UsbRequest,
+};
 
 use crate::device::{
     bus::{BusDeviceRef, Request, RequestSize},
     pci::constants::xhci::{
         operational::crcr,
-        rings::{event_ring::segments_table_entry_offsets::*, TRB_SIZE},
+        rings::{event_ring::segments_table_entry_offsets::*, trb_types, TRB_SIZE},
     },
 };
 
@@ -349,6 +354,243 @@ impl CommandRing {
     }
 }
 
+/// Transfer Rings: Unidirectional means of communication, allowing the
+/// driver to send requests over the XHCI controller to device endpoints.
+///
+/// All state lives in guest memory, this struct is merely a wrapper providing
+/// convenient methods to access the rings.
+#[derive(Debug)]
+pub struct TransferRing {
+    /// The context of the endpoint that the ring belongs to.
+    endpoint_context: EndpointContext,
+    /// A reference to guest memory.
+    dma_bus: BusDeviceRef,
+}
+
+impl TransferRing {
+    /// Create a new instance
+    ///
+    /// # Parameters
+    ///
+    /// - `endpoint_context`: the endpoint the rings belongs to.
+    /// - `dma_bus`: a reference to guest memory.
+    pub fn new(endpoint_context: EndpointContext, dma_bus: BusDeviceRef) -> Self {
+        Self {
+            endpoint_context,
+            dma_bus,
+        }
+    }
+
+    /// Try to retrieve a new TRB from a transfer ring.
+    ///
+    /// This function only returns `TransferTrb`s that represent commands that
+    /// are not Link TRBs. Instead, Link TRBs are handled correctly, which is
+    /// the reason why the function might read two TRBs to return a single one.
+    pub fn next_transfer_trb(&self) -> Option<(u64, Result<TransferTrb, TrbParseError>)> {
+        let (mut dequeue_pointer, mut cycle_state) =
+            self.endpoint_context.get_dequeue_pointer_and_cycle_state();
+        // retrieve TRB at dequeue pointer and return None if there is no fresh
+        // TRB
+        let first_trb_result = self.next_trb()?;
+        // special handling for Link TRBs
+        let trb_result = if let Ok(TransferTrb::Link(link_data)) = first_trb_result {
+            // encountered Link TRB
+            // update transfer ring status
+            dequeue_pointer = link_data.ring_segment_pointer;
+            if link_data.toggle_cycle {
+                cycle_state = !cycle_state;
+            }
+            self.endpoint_context
+                .set_dequeue_pointer_and_cycle_state(dequeue_pointer, cycle_state);
+            // lookup first TRB in the new memory segment
+            let second_trb_result = self.next_trb()?;
+            if let Ok(TransferTrb::Link(_)) = second_trb_result {
+                panic!("Link TRB should not follow directly after another Link TRB");
+            }
+            second_trb_result
+        } else {
+            first_trb_result
+        };
+
+        let trb_address = dequeue_pointer;
+
+        // advance to next TRB
+        dequeue_pointer += TRB_SIZE as u64;
+        self.endpoint_context
+            .set_dequeue_pointer_and_cycle_state(dequeue_pointer, cycle_state);
+
+        // return parsed result
+        Some((trb_address, trb_result))
+    }
+
+    /// Try to retrieve a new TRB from a transfer ring.
+    ///
+    /// If there is a fresh TRB at the dequeue pointer, the function tries to
+    /// parse the transfer TRB and returns the result. If there is a fresh Link
+    /// TRB, this function will return it!
+    fn next_trb(&self) -> Option<Result<TransferTrb, TrbParseError>> {
+        let (dequeue_pointer, cycle_state) =
+            self.endpoint_context.get_dequeue_pointer_and_cycle_state();
+        // retrieve TRB at current dequeue_pointer
+        let mut trb_buffer = vec![0; TRB_SIZE];
+        self.dma_bus.read_bulk(dequeue_pointer, &mut trb_buffer);
+
+        debug!(
+            "interpreting transfer TRB at dequeue pointer; cycle state = {}, TRB = {:?}",
+            cycle_state as u8, trb_buffer
+        );
+
+        // check if the TRB is fresh
+        let cycle_bit = trb_buffer[12] & 0x1 != 0;
+        if cycle_bit != cycle_state {
+            // cycle-bit mismatch: no new TRB available
+            return None;
+        }
+
+        // TRB is fresh; try to parse
+        let trb_result = TransferTrb::try_from(&trb_buffer[..]);
+
+        Some(trb_result)
+    }
+
+    /// Retrieve the next USB control request from a transfer ring.
+    ///
+    /// Takes setup+data+status TRBs or setup+status TRBs from transfer ring
+    /// and extracts the information into a UsbRequest struct.
+    ///
+    /// # Limitations
+    ///
+    /// This function currently assumes that all TRBs are available on the
+    /// ring. This assumption should hold true for synchronous handling of
+    /// doorbell writes, but once we implement async handling, encountering
+    /// partial requests is a valid scenario (and we would have to wait for
+    /// the driver to write the missing TRBs).
+    pub fn next_request(&self) -> Option<Result<(u64, UsbRequest), RequestParseError>> {
+        let first_trb = self.next_transfer_trb();
+        let setup_trb_data = match first_trb {
+            None => {
+                // no TRB available -> no request available
+                return None;
+            }
+            Some((_, Err(err))) => {
+                // got a erroneous TRB, pass error on
+                return Some(Err(RequestParseError::TrbParseError(err)));
+            }
+            Some((_, Ok(TransferTrb::SetupStage(data)))) => {
+                // happy case, we got a Setup Stage TRB
+                data
+            }
+            Some((_, Ok(trb))) => {
+                // got some TRB, but not a Setup Stage
+                return Some(Err(RequestParseError::UnexpectedTrbType(
+                    vec![trb_types::SETUP_STAGE],
+                    trb,
+                )));
+            }
+        };
+
+        let second_trb = self.next_transfer_trb();
+        let data_trb_or_address = match second_trb {
+            None => {
+                // there should follow either Data or Status Stage
+                return Some(Err(RequestParseError::MissingTrb));
+            }
+            Some((_, Err(err))) => {
+                // got a erroneous TRB, pass error on
+                return Some(Err(RequestParseError::TrbParseError(err)));
+            }
+            Some((_, Ok(TransferTrb::DataStage(data)))) => {
+                // happy case, we got a Data Stage TRB
+                if data.chain {
+                    panic!("encountered DataStage with chain bit set");
+                }
+                Ok(data)
+            }
+            Some((trb_address, Ok(TransferTrb::StatusStage))) => {
+                // happy case, we skipped Data Stage TRB and already got Status
+                // Stage.
+                // we indicate the address of the status stage (required for
+                // Transfer Event)
+                Err(trb_address)
+            }
+            Some((_, Ok(trb))) => {
+                // got some TRB, but neither a Data Stage nor a Status Stage
+                return Some(Err(RequestParseError::UnexpectedTrbType(
+                    vec![trb_types::DATA_STAGE, trb_types::STATUS_STAGE],
+                    trb,
+                )));
+            }
+        };
+
+        let (address, request) = match data_trb_or_address {
+            Ok(data_trb_data) => {
+                // the second TRB was a data stage.
+                // We need to retrieve the third TRB and make sure it is a status
+                // stage.
+                let third_trb = self.next_transfer_trb();
+                let address = match third_trb {
+                    None => {
+                        // there should follow a Status Stage
+                        return Some(Err(RequestParseError::MissingTrb));
+                    }
+                    Some((_, Err(err))) => {
+                        // got a erroneous TRB, pass error on
+                        return Some(Err(RequestParseError::TrbParseError(err)));
+                    }
+                    Some((trb_address, Ok(TransferTrb::StatusStage))) => {
+                        // happy case, we got a Data Stage TRB
+                        trb_address
+                    }
+                    Some((_, Ok(trb))) => {
+                        // got some TRB, but not a Status Stage
+                        return Some(Err(RequestParseError::UnexpectedTrbType(
+                            vec![trb_types::STATUS_STAGE],
+                            trb,
+                        )));
+                    }
+                };
+                // third TRB was Status Stage.
+                // build request with data pointer and return address of third
+                // TRB.
+                let request = UsbRequest::new_with_data(
+                    setup_trb_data.request_type,
+                    setup_trb_data.request,
+                    setup_trb_data.value,
+                    setup_trb_data.index,
+                    setup_trb_data.length,
+                    data_trb_data.data_pointer,
+                );
+                (address, request)
+            }
+            Err(address) => {
+                // the second TRB was a status stage.
+                // Then, all (two) TRBs were retrieved.
+                // build request and use address of second TRB
+                let request = UsbRequest::new(
+                    setup_trb_data.request_type,
+                    setup_trb_data.request,
+                    setup_trb_data.value,
+                    setup_trb_data.index,
+                    setup_trb_data.length,
+                );
+                (address, request)
+            }
+        };
+
+        Some(Ok((address, request)))
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum RequestParseError {
+    #[error("Encountered invalid TRB")]
+    TrbParseError(TrbParseError),
+    #[error("Encountered unexpected TRB type. Expected type(s) {0:?}, got TRB {1:?}")]
+    UnexpectedTrbType(Vec<u8>, TransferTrb),
+    #[error("Expected another TRB, but there was none.")]
+    MissingTrb,
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -424,7 +666,7 @@ mod tests {
 
         // ring abstraction should parse correctly
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(0, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
@@ -446,7 +688,7 @@ mod tests {
 
         // parse first noop
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(16, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
@@ -454,7 +696,7 @@ mod tests {
 
         // parse second noop
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(32, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
@@ -489,7 +731,7 @@ mod tests {
 
         // parse refreshed noop
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(0, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
