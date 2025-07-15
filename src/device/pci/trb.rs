@@ -11,17 +11,16 @@ use super::constants::xhci::rings::{
 };
 
 /// Represents a TRB that the XHCI controller can place on the event ring.
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum EventTrb {
-    TransferEvent(TransferEventTrbData),
-    CommandCompletionEvent(CommandCompletionEventTrbData),
-    PortStatusChangeEvent(PortStatusChangeEventTrbData),
-    //BandwidthRequestEvent,
-    //DoorbellEvent,
-    //HostControllerEvent,
-    //DeviceNotificationEvent,
-    //MfIndexWrapEvent,
+    Transfer(TransferEventTrbData),
+    CommandCompletion(CommandCompletionEventTrbData),
+    PortStatusChange(PortStatusChangeEventTrbData),
+    //BandwidthRequest,
+    //Doorbell,
+    //HostController,
+    //DeviceNotification,
+    //MfIndexWrap,
 }
 
 impl EventTrb {
@@ -37,9 +36,9 @@ impl EventTrb {
     pub fn to_bytes(&self, cycle_bit: bool) -> [u8; 16] {
         // layout the event-type-specific data
         let mut trb_data = match self {
-            Self::TransferEvent(data) => data.to_bytes(),
-            Self::CommandCompletionEvent(data) => data.to_bytes(),
-            Self::PortStatusChangeEvent(data) => data.to_bytes(),
+            Self::Transfer(data) => data.to_bytes(),
+            Self::CommandCompletion(data) => data.to_bytes(),
+            Self::PortStatusChange(data) => data.to_bytes(),
         };
         // set cycle bit
         trb_data[12] = (trb_data[12] & !0x1) | cycle_bit as u8;
@@ -93,7 +92,7 @@ impl EventTrb {
             command_completion_parameter & 0xff000000,
             "command_completion_parameter has to be a 24-bit value."
         );
-        Self::CommandCompletionEvent(CommandCompletionEventTrbData {
+        Self::CommandCompletion(CommandCompletionEventTrbData {
             command_trb_pointer,
             command_completion_parameter,
             completion_code,
@@ -135,7 +134,7 @@ impl EventTrb {
     /// - `port_id`: The number of the root hub port that generated this
     ///   event.
     pub const fn new_port_status_change_event_trb(port_id: u8) -> Self {
-        Self::PortStatusChangeEvent(PortStatusChangeEventTrbData { port_id })
+        Self::PortStatusChange(PortStatusChangeEventTrbData { port_id })
     }
 }
 
@@ -183,7 +182,7 @@ impl EventTrb {
         endpoint_id: u8,
         slot_id: u8,
     ) -> Self {
-        Self::TransferEvent(TransferEventTrbData {
+        Self::Transfer(TransferEventTrbData {
             trb_pointer,
             trb_transfer_length,
             completion_code,
@@ -256,17 +255,17 @@ pub enum CompletionCode {
 /// Represents a TRB that the driver can place on the command ring.
 #[derive(Debug)]
 pub enum CommandTrb {
-    EnableSlotCommand,
-    DisableSlotCommand,
-    AddressDeviceCommand(AddressDeviceCommandTrbData),
-    ConfigureEndpointCommand,
-    EvaluateContextCommand,
-    ResetEndpointCommand,
-    StopEndpointCommand,
-    SetTrDequeuePointerCommand,
-    ResetDeviceCommand,
-    ForceHeaderCommand,
-    NoOpCommand,
+    EnableSlot,
+    DisableSlot,
+    AddressDevice(AddressDeviceCommandTrbData),
+    ConfigureEndpoint,
+    EvaluateContext,
+    ResetEndpoint,
+    StopEndpoint,
+    SetTrDequeuePointer,
+    ResetDevice,
+    ForceHeader,
+    NoOp,
     Link(LinkTrbData),
 }
 
@@ -293,17 +292,17 @@ impl TryFrom<&[u8]> for CommandTrb {
             // EnableSlotCommand does not contain information apart from the
             // type; thus, no further parsing is necessary and we can just
             // return the enum variant.
-            trb_types::ENABLE_SLOT_COMMAND => Self::EnableSlotCommand,
-            trb_types::DISABLE_SLOT_COMMAND => Self::DisableSlotCommand,
+            trb_types::ENABLE_SLOT_COMMAND => Self::EnableSlot,
+            trb_types::DISABLE_SLOT_COMMAND => Self::DisableSlot,
             trb_types::ADDRESS_DEVICE_COMMAND => {
-                Self::AddressDeviceCommand(AddressDeviceCommandTrbData::parse(bytes)?)
+                Self::AddressDevice(AddressDeviceCommandTrbData::parse(bytes)?)
             }
-            trb_types::CONFIGURE_ENDPOINT_COMMAND => Self::ConfigureEndpointCommand,
-            trb_types::EVALUATE_CONTEXT_COMMAND => Self::EvaluateContextCommand,
-            trb_types::RESET_ENDPOINT_COMMAND => Self::ResetEndpointCommand,
-            trb_types::STOP_ENDPOINT_COMMAND => Self::StopEndpointCommand,
-            trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => Self::SetTrDequeuePointerCommand,
-            trb_types::RESET_DEVICE_COMMAND => Self::ResetDeviceCommand,
+            trb_types::CONFIGURE_ENDPOINT_COMMAND => Self::ConfigureEndpoint,
+            trb_types::EVALUATE_CONTEXT_COMMAND => Self::EvaluateContext,
+            trb_types::RESET_ENDPOINT_COMMAND => Self::ResetEndpoint,
+            trb_types::STOP_ENDPOINT_COMMAND => Self::StopEndpoint,
+            trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => Self::SetTrDequeuePointer,
+            trb_types::RESET_DEVICE_COMMAND => Self::ResetDevice,
             trb_types::FORCE_EVENT_COMMAND => {
                 return Err(TrbParseError::UnsupportedOptionalCommand(
                     18,
@@ -329,8 +328,8 @@ impl TryFrom<&[u8]> for CommandTrb {
                 ))
             }
 
-            trb_types::FORCE_HEADER_COMMAND => Self::ForceHeaderCommand,
-            trb_types::NO_OP_COMMAND => Self::NoOpCommand,
+            trb_types::FORCE_HEADER_COMMAND => Self::ForceHeader,
+            trb_types::NO_OP_COMMAND => Self::NoOp,
             trb_type => return Err(TrbParseError::UnknownTrbType(trb_type)),
         };
         Ok(command_trb)
@@ -599,7 +598,7 @@ mod tests {
             "A valid TRB byte representation should be parsed successfully."
         );
         let trb = trb_result.unwrap();
-        if !matches!(trb, CommandTrb::EnableSlotCommand) {
+        if !matches!(trb, CommandTrb::EnableSlot) {
             panic!(
                 "A TRB with TRB type 9 should result in a CommandTrb::EnableSlotCommand. Got instead: {:?}",
                 trb
@@ -648,7 +647,7 @@ mod tests {
             "A valid TRB byte representation should be parsed successfully."
         );
         let trb = trb_result.unwrap();
-        if let CommandTrb::AddressDeviceCommand(data) = trb {
+        if let CommandTrb::AddressDevice(data) = trb {
             assert_eq!(
                 0x1122334455667780, data.input_context_pointer,
                 "input_context_pointer was parsed incorrectly."

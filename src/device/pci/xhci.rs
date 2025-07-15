@@ -178,12 +178,12 @@ impl XhciController {
     fn handle_command(&mut self, address: u64, cmd: CommandTrb) {
         debug!("handling command {:?} at {:#x}", cmd, address);
         let completion_event = match cmd {
-            CommandTrb::EnableSlotCommand => {
+            CommandTrb::EnableSlot => {
                 let (completion_code, slot_id) = self.handle_enable_slot();
                 EventTrb::new_command_completion_event_trb(address, 0, completion_code, slot_id)
             }
-            CommandTrb::DisableSlotCommand => todo!(),
-            CommandTrb::AddressDeviceCommand(data) => {
+            CommandTrb::DisableSlot => todo!(),
+            CommandTrb::AddressDevice(data) => {
                 self.handle_address_device(&data);
                 EventTrb::new_command_completion_event_trb(
                     address,
@@ -192,14 +192,14 @@ impl XhciController {
                     data.slot_id,
                 )
             }
-            CommandTrb::ConfigureEndpointCommand => todo!(),
-            CommandTrb::EvaluateContextCommand => todo!(),
-            CommandTrb::ResetEndpointCommand => todo!(),
-            CommandTrb::StopEndpointCommand => todo!(),
-            CommandTrb::SetTrDequeuePointerCommand => todo!(),
-            CommandTrb::ResetDeviceCommand => todo!(),
-            CommandTrb::ForceHeaderCommand => todo!(),
-            CommandTrb::NoOpCommand => todo!(),
+            CommandTrb::ConfigureEndpoint => todo!(),
+            CommandTrb::EvaluateContext => todo!(),
+            CommandTrb::ResetEndpoint => todo!(),
+            CommandTrb::StopEndpoint => todo!(),
+            CommandTrb::SetTrDequeuePointer => todo!(),
+            CommandTrb::ResetDevice => todo!(),
+            CommandTrb::ForceHeader => todo!(),
+            CommandTrb::NoOp => todo!(),
             CommandTrb::Link(_) => unreachable!(),
         };
         self.event_ring.enqueue(&completion_event);

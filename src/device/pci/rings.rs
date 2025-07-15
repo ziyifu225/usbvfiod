@@ -666,7 +666,7 @@ mod tests {
 
         // ring abstraction should parse correctly
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(0, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
@@ -688,7 +688,7 @@ mod tests {
 
         // parse first noop
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(16, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
@@ -696,7 +696,7 @@ mod tests {
 
         // parse second noop
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(32, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
@@ -731,7 +731,7 @@ mod tests {
 
         // parse refreshed noop
         let trb = command_ring.next_command_trb();
-        if let Some((address, Ok(CommandTrb::NoOpCommand))) = trb {
+        if let Some((address, Ok(CommandTrb::NoOp))) = trb {
             assert_eq!(0, address, "incorrect address of the next TRB returned");
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
