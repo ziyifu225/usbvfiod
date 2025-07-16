@@ -41,6 +41,10 @@ struct InterruptEventFd {
 
 impl InterruptLine for InterruptEventFd {
     fn interrupt(&self) {
+        // Ensure all guest memory modifications can be observed by another process.
+        // The sequentially consistent fence emits a hardware memory barrier operation.
+        std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+
         // Write any 8 byte value to the EventFd.
         // TODO: we just expect this to always work currently.
         let _amount = self
