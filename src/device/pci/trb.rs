@@ -260,7 +260,16 @@ pub enum CompletionCode {
 
 /// Represents a TRB that the driver can place on the command ring.
 #[derive(Debug)]
-pub enum CommandTrb {
+pub struct CommandTrb {
+    /// Guest memory address where the driver placed the TRB.
+    pub address: u64,
+    /// Information specific to the particular command TRB variant.
+    pub variant: CommandTrbVariant,
+}
+
+/// Represents a TRB that the driver can place on the command ring.
+#[derive(Debug)]
+pub enum CommandTrbVariant {
     EnableSlot,
     DisableSlot,
     AddressDevice(AddressDeviceCommandTrbData),
@@ -273,12 +282,15 @@ pub enum CommandTrb {
     ForceHeader,
     NoOp,
     Link(LinkTrbData),
+    Unrecognized(RawTrbBuffer, TrbParseError),
 }
 
-impl TryFrom<RawTrbBuffer> for CommandTrb {
-    type Error = TrbParseError;
-
-    /// Try to parse a TRB from a 16-byte buffer.
+impl CommandTrbVariant {
+    /// Parse command-specific TRB data from a 16-byte buffer.
+    ///
+    /// If any errors occur during parsing, the function returns
+    /// `CommandTrbVariant::Unrecognized`. Otherwise, it returns the variant
+    /// including all relevant data that was encoded in the TRB buffer.
     ///
     /// # Limitations
     ///
@@ -287,59 +299,56 @@ impl TryFrom<RawTrbBuffer> for CommandTrb {
     /// enum variant without an associated struct, the parsing for the
     /// particular command is not yet implemented. EnableSlotCommand is an
     /// exception, because the TRB does not contain any additional information.
-    fn try_from(bytes: RawTrbBuffer) -> Result<Self, Self::Error> {
+    pub fn parse(bytes: RawTrbBuffer) -> Self {
         let trb_type = bytes[13] >> 2;
-        let command_trb = match trb_type {
-            trb_types::LINK => Self::Link(LinkTrbData::parse(bytes)?),
+        let result = match trb_type {
+            trb_types::LINK => LinkTrbData::parse(bytes).map(Self::Link),
             // EnableSlotCommand does not contain information apart from the
             // type; thus, no further parsing is necessary and we can just
             // return the enum variant.
-            trb_types::ENABLE_SLOT_COMMAND => Self::EnableSlot,
-            trb_types::DISABLE_SLOT_COMMAND => Self::DisableSlot,
+            trb_types::ENABLE_SLOT_COMMAND => Ok(Self::EnableSlot),
+            trb_types::DISABLE_SLOT_COMMAND => Ok(Self::DisableSlot),
             trb_types::ADDRESS_DEVICE_COMMAND => {
-                Self::AddressDevice(AddressDeviceCommandTrbData::parse(bytes)?)
+                AddressDeviceCommandTrbData::parse(bytes).map(Self::AddressDevice)
             }
-            trb_types::CONFIGURE_ENDPOINT_COMMAND => Self::ConfigureEndpoint,
-            trb_types::EVALUATE_CONTEXT_COMMAND => Self::EvaluateContext,
-            trb_types::RESET_ENDPOINT_COMMAND => Self::ResetEndpoint,
-            trb_types::STOP_ENDPOINT_COMMAND => Self::StopEndpoint,
-            trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => Self::SetTrDequeuePointer,
-            trb_types::RESET_DEVICE_COMMAND => Self::ResetDevice,
-            trb_types::FORCE_EVENT_COMMAND => {
-                return Err(TrbParseError::UnsupportedOptionalCommand(
-                    18,
-                    "Force Event Command".to_string(),
-                ));
-            }
+            trb_types::CONFIGURE_ENDPOINT_COMMAND => Ok(Self::ConfigureEndpoint),
+            trb_types::EVALUATE_CONTEXT_COMMAND => Ok(Self::EvaluateContext),
+            trb_types::RESET_ENDPOINT_COMMAND => Ok(Self::ResetEndpoint),
+            trb_types::STOP_ENDPOINT_COMMAND => Ok(Self::StopEndpoint),
+            trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => Ok(Self::SetTrDequeuePointer),
+            trb_types::RESET_DEVICE_COMMAND => Ok(Self::ResetDevice),
+            trb_types::FORCE_EVENT_COMMAND => Err(TrbParseError::UnsupportedOptionalCommand(
+                18,
+                "Force Event Command".to_string(),
+            )),
             trb_types::NEGOTIATE_BANDWIDTH_COMMAND => {
-                return Err(TrbParseError::UnsupportedOptionalCommand(
+                Err(TrbParseError::UnsupportedOptionalCommand(
                     19,
                     "Negotiate Bandwidth Command".to_string(),
-                ));
+                ))
             }
             trb_types::SET_LATENCY_TOLERANCE_VALUE_COMMAND => {
-                return Err(TrbParseError::UnsupportedOptionalCommand(
+                Err(TrbParseError::UnsupportedOptionalCommand(
                     20,
                     "Set Latency Tolerance Value Command".to_string(),
-                ));
+                ))
             }
             trb_types::GET_PORT_BANDWIDTH_COMMAND => {
-                return Err(TrbParseError::UnsupportedOptionalCommand(
+                Err(TrbParseError::UnsupportedOptionalCommand(
                     21,
                     "Get Port Bandwidth Command".to_string(),
                 ))
             }
-
-            trb_types::FORCE_HEADER_COMMAND => Self::ForceHeader,
-            trb_types::NO_OP_COMMAND => Self::NoOp,
-            trb_type => return Err(TrbParseError::UnknownTrbType(trb_type)),
+            trb_types::FORCE_HEADER_COMMAND => Ok(Self::ForceHeader),
+            trb_types::NO_OP_COMMAND => Ok(Self::NoOp),
+            trb_type => Err(TrbParseError::UnknownTrbType(trb_type)),
         };
-        Ok(command_trb)
+        result.unwrap_or_else(|err| Self::Unrecognized(bytes, err))
     }
 }
 
 /// Custom error type to represent errors in TRB parsing.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LinkTrbData {
     /// The address of the next ring segment.
     pub ring_segment_pointer: u64,
@@ -383,7 +392,7 @@ impl LinkTrbData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AddressDeviceCommandTrbData {
     /// The address of the input context.
     pub input_context_pointer: u64,
@@ -552,7 +561,7 @@ impl DataStageTrbData {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum TrbParseError {
     #[error("TRB type {0} refers to \"{1}\", which is optional and not supported.")]
     UnsupportedOptionalCommand(u8, String),
@@ -572,13 +581,8 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24,
             0x00, 0x00,
         ];
-        let trb_result = CommandTrb::try_from(trb_bytes);
-        assert!(
-            trb_result.is_ok(),
-            "A valid TRB byte representation should be parsed successfully."
-        );
-        let trb = trb_result.unwrap();
-        if !matches!(trb, CommandTrb::EnableSlot) {
+        let trb = CommandTrbVariant::parse(trb_bytes);
+        if !matches!(trb, CommandTrbVariant::EnableSlot) {
             panic!(
                 "A TRB with TRB type 9 should result in a CommandTrb::EnableSlotCommand. Got instead: {:?}",
                 trb
@@ -592,13 +596,8 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
             0x00, 0x00,
         ];
-        let trb_result = CommandTrb::try_from(trb_bytes);
-        assert!(
-            trb_result.is_ok(),
-            "A valid TRB byte representation should be parsed successfully."
-        );
-        let trb = trb_result.unwrap();
-        if let CommandTrb::Link(link_data) = trb {
+        let trb = CommandTrbVariant::parse(trb_bytes);
+        if let CommandTrbVariant::Link(link_data) = trb {
             assert_eq!(
                 0x1122334455667780, link_data.ring_segment_pointer,
                 "link_segment_pointer was parsed incorrectly."
@@ -621,13 +620,8 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x2e,
             0x00, 0x13,
         ];
-        let trb_result = CommandTrb::try_from(trb_bytes);
-        assert!(
-            trb_result.is_ok(),
-            "A valid TRB byte representation should be parsed successfully."
-        );
-        let trb = trb_result.unwrap();
-        if let CommandTrb::AddressDevice(data) = trb {
+        let trb = CommandTrbVariant::parse(trb_bytes);
+        if let CommandTrbVariant::AddressDevice(data) = trb {
             assert_eq!(
                 0x1122334455667780, data.input_context_pointer,
                 "input_context_pointer was parsed incorrectly."
