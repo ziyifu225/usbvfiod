@@ -5,10 +5,16 @@
 
 use thiserror::Error;
 
-use super::constants::xhci::rings::{
-    trb_types::{self, *},
-    TRB_SIZE,
-};
+use super::constants::xhci::rings::trb_types::{self, *};
+
+/// Dedicated type to indicate that a 16 byte array represents the contents
+/// of a Transfer Request Block.
+pub type RawTrbBuffer = [u8; 16];
+
+/// Create a zero-initiliated TRB buffer.
+pub const fn zeroed_trb_buffer() -> RawTrbBuffer {
+    [0; 16]
+}
 
 /// Represents a TRB that the XHCI controller can place on the event ring.
 #[derive(Debug)]
@@ -33,7 +39,7 @@ impl EventTrb {
     ///
     /// - `cycle_bit`: value to set the cycle bit to. Has to match the ring
     ///   where the caller will write the TRB on.
-    pub fn to_bytes(&self, cycle_bit: bool) -> [u8; 16] {
+    pub fn to_bytes(&self, cycle_bit: bool) -> RawTrbBuffer {
         // layout the event-type-specific data
         let mut trb_data = match self {
             Self::Transfer(data) => data.to_bytes(),
@@ -102,8 +108,8 @@ impl EventTrb {
 }
 
 impl CommandCompletionEventTrbData {
-    fn to_bytes(&self) -> [u8; 16] {
-        let mut trb = [0; 16];
+    fn to_bytes(&self) -> RawTrbBuffer {
+        let mut trb = zeroed_trb_buffer();
 
         trb[0..8].copy_from_slice(&self.command_trb_pointer.to_le_bytes());
         trb[8..11].copy_from_slice(&self.command_completion_parameter.to_le_bytes()[0..3]);
@@ -139,8 +145,8 @@ impl EventTrb {
 }
 
 impl PortStatusChangeEventTrbData {
-    const fn to_bytes(&self) -> [u8; 16] {
-        let mut bytes = [0; 16];
+    const fn to_bytes(&self) -> RawTrbBuffer {
+        let mut bytes = zeroed_trb_buffer();
 
         bytes[3] = self.port_id;
         bytes[11] = CompletionCode::Success as u8;
@@ -194,8 +200,8 @@ impl EventTrb {
 }
 
 impl TransferEventTrbData {
-    fn to_bytes(&self) -> [u8; 16] {
-        let mut trb = [0; 16];
+    fn to_bytes(&self) -> RawTrbBuffer {
+        let mut trb = zeroed_trb_buffer();
 
         trb[0..8].copy_from_slice(&self.trb_pointer.to_le_bytes());
         trb[8..11].copy_from_slice(&self.trb_transfer_length.to_le_bytes()[0..3]);
@@ -269,10 +275,10 @@ pub enum CommandTrb {
     Link(LinkTrbData),
 }
 
-impl TryFrom<&[u8]> for CommandTrb {
+impl TryFrom<RawTrbBuffer> for CommandTrb {
     type Error = TrbParseError;
 
-    /// Try to parse a TRB from a byte slice.
+    /// Try to parse a TRB from a 16-byte buffer.
     ///
     /// # Limitations
     ///
@@ -281,11 +287,7 @@ impl TryFrom<&[u8]> for CommandTrb {
     /// enum variant without an associated struct, the parsing for the
     /// particular command is not yet implemented. EnableSlotCommand is an
     /// exception, because the TRB does not contain any additional information.
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let slice_size = bytes.len();
-        if slice_size != TRB_SIZE {
-            return Err(TrbParseError::IncorrectSliceSize(slice_size));
-        }
+    fn try_from(bytes: RawTrbBuffer) -> Result<Self, Self::Error> {
         let trb_type = bytes[13] >> 2;
         let command_trb = match trb_type {
             trb_types::LINK => Self::Link(LinkTrbData::parse(bytes)?),
@@ -349,17 +351,13 @@ impl LinkTrbData {
     /// Parse data of a Link TRB.
     ///
     /// Only `CommandTrb::try_from` and `TransferTrb::try_from` should call
-    /// this function. Thus, we make the following assumptions to avoid
-    /// duplicate checks:
-    ///
-    /// - `value` is a slice of size 16.
-    /// - The TRB type (upper 6 bit of byte 13) indicates a link TRB.
+    /// this function.
     ///
     /// # Limitations
     ///
     /// The function currently does not check if the slice respects all RsvdZ
     /// fields.
-    fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+    fn parse(trb_bytes: RawTrbBuffer) -> Result<Self, TrbParseError> {
         let trb_type = trb_bytes[13] >> 2;
         assert_eq!(
             trb_types::LINK,
@@ -399,17 +397,13 @@ pub struct AddressDeviceCommandTrbData {
 impl AddressDeviceCommandTrbData {
     /// Parse data of a Address Device Command TRB.
     ///
-    /// Only `CommandTrb::try_from` should call this function. Thus, we make
-    /// the following assumptions to avoid duplicate checks:
-    ///
-    /// - `value` is a slice of size 16.
-    /// - The TRB type (upper 6 bit of byte 13) indicates an address device TRB.
+    /// Only `CommandTrb::try_from` should call this function.
     ///
     /// # Limitations
     ///
     /// The function currently does not check if the slice respects all RsvdZ
     /// fields.
-    fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+    fn parse(trb_bytes: RawTrbBuffer) -> Result<Self, TrbParseError> {
         let trb_type = trb_bytes[13] >> 2;
         assert_eq!(
             trb_types::ADDRESS_DEVICE_COMMAND,
@@ -451,7 +445,7 @@ pub enum TransferTrb {
     NoOp,
 }
 
-impl TryFrom<&[u8]> for TransferTrb {
+impl TryFrom<RawTrbBuffer> for TransferTrb {
     type Error = TrbParseError;
 
     /// Try to parse a transfer TRB from a byte slice.
@@ -462,11 +456,7 @@ impl TryFrom<&[u8]> for TransferTrb {
     /// not parse all of them in full detail. If the function returns only the
     /// enum variant without an associated struct, the parsing for the
     /// particular command is not yet implemented.
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let slice_size = bytes.len();
-        if slice_size != 16 {
-            return Err(TrbParseError::IncorrectSliceSize(slice_size));
-        }
+    fn try_from(bytes: RawTrbBuffer) -> Result<Self, Self::Error> {
         let trb_type = bytes[13] >> 2;
         let command_trb = match trb_type {
             trb_types::NORMAL => Self::Normal,
@@ -495,17 +485,13 @@ pub struct SetupStageTrbData {
 impl SetupStageTrbData {
     /// Parse data of a Setup Stage TRB.
     ///
-    /// Only `TransferTrb::try_from` should call this function. Thus, we make
-    /// the following assumptions to avoid duplicate checks:
-    ///
-    /// - `value` is a slice of size 16.
-    /// - The TRB type (upper 6 bit of byte 13) indicates a Setup Stage TRB.
+    /// Only `TransferTrb::try_from` should call this function.
     ///
     /// # Limitations
     ///
     /// The function currently does not check if the slice respects RsvdZ
     /// fields.
-    fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+    fn parse(trb_bytes: RawTrbBuffer) -> Result<Self, TrbParseError> {
         let trb_type = trb_bytes[13] >> 2;
         assert_eq!(
             trb_types::SETUP_STAGE,
@@ -539,17 +525,13 @@ pub struct DataStageTrbData {
 impl DataStageTrbData {
     /// Parse data of a Data Stage TRB.
     ///
-    /// Only `TransferTrb::try_from` should call this function. Thus, we make
-    /// the following assumptions to avoid duplicate checks:
-    ///
-    /// - `value` is a slice of size 16.
-    /// - The TRB type (upper 6 bit of byte 13) indicates a Data Stage TRB.
+    /// Only `TransferTrb::try_from` should call this function.
     ///
     /// # Limitations
     ///
     /// The function currently does not check if the slice respects RsvdZ
     /// fields.
-    fn parse(trb_bytes: &[u8]) -> Result<Self, TrbParseError> {
+    fn parse(trb_bytes: RawTrbBuffer) -> Result<Self, TrbParseError> {
         let trb_type = trb_bytes[13] >> 2;
         assert_eq!(
             trb_types::DATA_STAGE,
@@ -572,8 +554,6 @@ impl DataStageTrbData {
 
 #[derive(Error, Debug)]
 pub enum TrbParseError {
-    #[error("Cannot parse TRB from a slice of {0} bytes. A TRB always has a size of 16 bytes.")]
-    IncorrectSliceSize(usize),
     #[error("TRB type {0} refers to \"{1}\", which is optional and not supported.")]
     UnsupportedOptionalCommand(u8, String),
     #[error("TRB type {0} does not refer to any command.")]
@@ -592,7 +572,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24,
             0x00, 0x00,
         ];
-        let trb_result = CommandTrb::try_from(&trb_bytes[..]);
+        let trb_result = CommandTrb::try_from(trb_bytes);
         assert!(
             trb_result.is_ok(),
             "A valid TRB byte representation should be parsed successfully."
@@ -612,7 +592,7 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
             0x00, 0x00,
         ];
-        let trb_result = CommandTrb::try_from(&trb_bytes[..]);
+        let trb_result = CommandTrb::try_from(trb_bytes);
         assert!(
             trb_result.is_ok(),
             "A valid TRB byte representation should be parsed successfully."
@@ -641,7 +621,7 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x2e,
             0x00, 0x13,
         ];
-        let trb_result = CommandTrb::try_from(&trb_bytes[..]);
+        let trb_result = CommandTrb::try_from(trb_bytes);
         assert!(
             trb_result.is_ok(),
             "A valid TRB byte representation should be parsed successfully."
@@ -700,7 +680,7 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
             0x00, 0x00,
         ];
-        let trb_result = TransferTrb::try_from(&trb_bytes[..]);
+        let trb_result = TransferTrb::try_from(trb_bytes);
         assert!(
             trb_result.is_ok(),
             "A valid TRB byte representation should be parsed successfully."
@@ -729,7 +709,7 @@ mod tests {
             0x11, 0x22, 0x44, 0x33, 0x66, 0x55, 0x88, 0x77, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
             0x00, 0x00,
         ];
-        let trb_result = TransferTrb::try_from(&trb_bytes[..]);
+        let trb_result = TransferTrb::try_from(trb_bytes);
         assert!(
             trb_result.is_ok(),
             "A valid TRB byte representation should be parsed successfully."
@@ -758,7 +738,7 @@ mod tests {
             0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c,
             0x00, 0x00,
         ];
-        let trb_result = TransferTrb::try_from(&trb_bytes[..]);
+        let trb_result = TransferTrb::try_from(trb_bytes);
         assert!(
             trb_result.is_ok(),
             "A valid TRB byte representation should be parsed successfully."
