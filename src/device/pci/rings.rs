@@ -15,9 +15,12 @@ use super::{
 
 use crate::device::{
     bus::{BusDeviceRef, Request, RequestSize},
-    pci::constants::xhci::{
-        operational::crcr,
-        rings::{event_ring::segments_table_entry_offsets::*, trb_types, TRB_SIZE},
+    pci::{
+        constants::xhci::{
+            operational::crcr,
+            rings::{event_ring::segments_table_entry_offsets::*, trb_types, TRB_SIZE},
+        },
+        trb::zeroed_trb_buffer,
     },
 };
 
@@ -331,7 +334,7 @@ impl CommandRing {
     /// TRB, this function will return it!
     fn next_trb(&self) -> Option<Result<CommandTrb, TrbParseError>> {
         // retrieve TRB at current dequeue_pointer
-        let mut trb_buffer = vec![0; TRB_SIZE];
+        let mut trb_buffer = zeroed_trb_buffer();
         self.dma_bus
             .read_bulk(self.dequeue_pointer, &mut trb_buffer);
 
@@ -348,7 +351,7 @@ impl CommandRing {
         }
 
         // TRB is fresh; try to parse
-        let trb_result = CommandTrb::try_from(&trb_buffer[..]);
+        let trb_result = CommandTrb::try_from(trb_buffer);
 
         Some(trb_result)
     }
@@ -432,7 +435,7 @@ impl TransferRing {
         let (dequeue_pointer, cycle_state) =
             self.endpoint_context.get_dequeue_pointer_and_cycle_state();
         // retrieve TRB at current dequeue_pointer
-        let mut trb_buffer = vec![0; TRB_SIZE];
+        let mut trb_buffer = zeroed_trb_buffer();
         self.dma_bus.read_bulk(dequeue_pointer, &mut trb_buffer);
 
         debug!(
@@ -448,7 +451,7 @@ impl TransferRing {
         }
 
         // TRB is fresh; try to parse
-        let trb_result = TransferTrb::try_from(&trb_buffer[..]);
+        let trb_result = TransferTrb::try_from(trb_buffer);
 
         Some(trb_result)
     }
