@@ -266,7 +266,7 @@ impl XhciController {
             .get_device_context(1)
             .get_control_transfer_ring();
 
-        let (address, request) = match transfer_ring.next_request() {
+        let request = match transfer_ring.next_request() {
             None => {
                 // XXX currently, we expect that a doorbell ring always
                 // notifies us about a new control request. We want to
@@ -297,8 +297,14 @@ impl XhciController {
         // TODO forward request to device
 
         // send transfer event
-        let trb =
-            EventTrb::new_transfer_event_trb(address, 0, CompletionCode::Success, false, 1, 1);
+        let trb = EventTrb::new_transfer_event_trb(
+            request.address,
+            0,
+            CompletionCode::Success,
+            false,
+            1,
+            1,
+        );
         self.event_ring.enqueue(&trb);
         self.interrupt_line.interrupt();
         debug!("sent Transfer Event and signaled interrupt");

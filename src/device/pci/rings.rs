@@ -472,7 +472,7 @@ impl TransferRing {
     /// doorbell writes, but once we implement async handling, encountering
     /// partial requests is a valid scenario (and we would have to wait for
     /// the driver to write the missing TRBs).
-    pub fn next_request(&self) -> Option<Result<(u64, UsbRequest), RequestParseError>> {
+    pub fn next_request(&self) -> Option<Result<UsbRequest, RequestParseError>> {
         let first_trb = self.next_transfer_trb()?;
 
         let setup_trb_data = match first_trb.variant {
@@ -527,7 +527,7 @@ impl TransferRing {
             }
         };
 
-        let (address, request) = match data_trb_or_address {
+        let request = match data_trb_or_address {
             Ok(data_trb_data) => {
                 // the second TRB was a data stage.
                 // We need to retrieve the third TRB and make sure it is a status
@@ -559,32 +559,33 @@ impl TransferRing {
                 // third TRB was Status Stage.
                 // build request with data pointer and return address of third
                 // TRB.
-                let request = UsbRequest::new_with_data(
-                    setup_trb_data.request_type,
-                    setup_trb_data.request,
-                    setup_trb_data.value,
-                    setup_trb_data.index,
-                    setup_trb_data.length,
-                    data_trb_data.data_pointer,
-                );
-                (address, request)
+                UsbRequest {
+                    address,
+                    request_type: setup_trb_data.request_type,
+                    request: setup_trb_data.request,
+                    value: setup_trb_data.value,
+                    index: setup_trb_data.index,
+                    length: setup_trb_data.length,
+                    data: Some(data_trb_data.data_pointer),
+                }
             }
             Err(address) => {
                 // the second TRB was a status stage.
                 // Then, all (two) TRBs were retrieved.
                 // build request and use address of second TRB
-                let request = UsbRequest::new(
-                    setup_trb_data.request_type,
-                    setup_trb_data.request,
-                    setup_trb_data.value,
-                    setup_trb_data.index,
-                    setup_trb_data.length,
-                );
-                (address, request)
+                UsbRequest {
+                    address,
+                    request_type: setup_trb_data.request_type,
+                    request: setup_trb_data.request,
+                    value: setup_trb_data.value,
+                    index: setup_trb_data.index,
+                    length: setup_trb_data.length,
+                    data: None,
+                }
             }
         };
 
-        Some(Ok((address, request)))
+        Some(Ok(request))
     }
 }
 
