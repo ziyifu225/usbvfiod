@@ -443,7 +443,16 @@ impl AddressDeviceCommandTrbData {
 
 /// Represents a TRB that the driver can place on a transfer ring.
 #[derive(Debug)]
-pub enum TransferTrb {
+pub struct TransferTrb {
+    /// Guest memory address where the driver placed the TRB.
+    pub address: u64,
+    /// Information specific to the particular transfer TRB variant.
+    pub variant: TransferTrbVariant,
+}
+
+/// Represents a TRB that the driver can place on a transfer ring.
+#[derive(Debug)]
+pub enum TransferTrbVariant {
     Normal,
     SetupStage(SetupStageTrbData),
     DataStage(DataStageTrbData),
@@ -452,12 +461,16 @@ pub enum TransferTrb {
     Link(LinkTrbData),
     EventData,
     NoOp,
+    #[allow(unused)]
+    Unrecognized(RawTrbBuffer, TrbParseError),
 }
 
-impl TryFrom<RawTrbBuffer> for TransferTrb {
-    type Error = TrbParseError;
-
-    /// Try to parse a transfer TRB from a byte slice.
+impl TransferTrbVariant {
+    /// Parse transfer-specific TRB data from a 16-byte buffer.
+    ///
+    /// If any errors occur during parsing, the function returns
+    /// `TransferTrbVariant::Unrecognized`. Otherwise, it returns the variant
+    /// including all relevant data that was encoded in the TRB buffer.
     ///
     /// # Limitations
     ///
@@ -465,20 +478,20 @@ impl TryFrom<RawTrbBuffer> for TransferTrb {
     /// not parse all of them in full detail. If the function returns only the
     /// enum variant without an associated struct, the parsing for the
     /// particular command is not yet implemented.
-    fn try_from(bytes: RawTrbBuffer) -> Result<Self, Self::Error> {
+    pub fn parse(bytes: RawTrbBuffer) -> Self {
         let trb_type = bytes[13] >> 2;
-        let command_trb = match trb_type {
-            trb_types::NORMAL => Self::Normal,
-            trb_types::SETUP_STAGE => Self::SetupStage(SetupStageTrbData::parse(bytes)?),
-            trb_types::DATA_STAGE => Self::DataStage(DataStageTrbData::parse(bytes)?),
-            trb_types::STATUS_STAGE => Self::StatusStage,
-            trb_types::ISOCH => Self::Isoch,
-            trb_types::LINK => Self::Link(LinkTrbData::parse(bytes)?),
-            trb_types::EVENT_DATA => Self::EventData,
-            trb_types::NO_OP => Self::NoOp,
-            trb_type => return Err(TrbParseError::UnknownTrbType(trb_type)),
+        let result = match trb_type {
+            trb_types::NORMAL => Ok(Self::Normal),
+            trb_types::SETUP_STAGE => SetupStageTrbData::parse(bytes).map(Self::SetupStage),
+            trb_types::DATA_STAGE => DataStageTrbData::parse(bytes).map(Self::DataStage),
+            trb_types::STATUS_STAGE => Ok(Self::StatusStage),
+            trb_types::ISOCH => Ok(Self::Isoch),
+            trb_types::LINK => LinkTrbData::parse(bytes).map(Self::Link),
+            trb_types::EVENT_DATA => Ok(Self::EventData),
+            trb_types::NO_OP => Ok(Self::NoOp),
+            trb_type => Err(TrbParseError::UnknownTrbType(trb_type)),
         };
-        Ok(command_trb)
+        result.unwrap_or_else(|err| Self::Unrecognized(bytes, err))
     }
 }
 
@@ -674,13 +687,8 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
             0x00, 0x00,
         ];
-        let trb_result = TransferTrb::try_from(trb_bytes);
-        assert!(
-            trb_result.is_ok(),
-            "A valid TRB byte representation should be parsed successfully."
-        );
-        let trb = trb_result.unwrap();
-        if let TransferTrb::Link(link_data) = trb {
+        let trb = TransferTrbVariant::parse(trb_bytes);
+        if let TransferTrbVariant::Link(link_data) = trb {
             assert_eq!(
                 0x1122334455667780, link_data.ring_segment_pointer,
                 "link_segment_pointer was parsed incorrectly."
@@ -703,13 +711,8 @@ mod tests {
             0x11, 0x22, 0x44, 0x33, 0x66, 0x55, 0x88, 0x77, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
             0x00, 0x00,
         ];
-        let trb_result = TransferTrb::try_from(trb_bytes);
-        assert!(
-            trb_result.is_ok(),
-            "A valid TRB byte representation should be parsed successfully."
-        );
-        let trb = trb_result.unwrap();
-        if let TransferTrb::SetupStage(data) = trb {
+        let trb = TransferTrbVariant::parse(trb_bytes);
+        if let TransferTrbVariant::SetupStage(data) = trb {
             assert_eq!(
                 0x11, data.request_type,
                 "request_type was parsed incorrectly."
@@ -732,13 +735,8 @@ mod tests {
             0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c,
             0x00, 0x00,
         ];
-        let trb_result = TransferTrb::try_from(trb_bytes);
-        assert!(
-            trb_result.is_ok(),
-            "A valid TRB byte representation should be parsed successfully."
-        );
-        let trb = trb_result.unwrap();
-        if let TransferTrb::DataStage(data) = trb {
+        let trb = TransferTrbVariant::parse(trb_bytes);
+        if let TransferTrbVariant::DataStage(data) = trb {
             assert_eq!(
                 0x1122334455667788, data.data_pointer,
                 "request_type was parsed incorrectly."
