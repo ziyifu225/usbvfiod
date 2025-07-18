@@ -605,13 +605,12 @@ mod tests {
 
     use super::*;
 
-    /// A device that only accepts bulk reads and writes.
     #[derive(Debug)]
-    struct BulkOnlyDevice {
+    struct TestingRamDevice {
         data: Mutex<Vec<u8>>,
     }
 
-    impl BulkOnlyDevice {
+    impl TestingRamDevice {
         fn new(data: &[u8]) -> Self {
             Self {
                 data: Mutex::new(data.to_vec()),
@@ -619,17 +618,25 @@ mod tests {
         }
     }
 
-    impl BusDevice for BulkOnlyDevice {
+    impl BusDevice for TestingRamDevice {
         fn size(&self) -> u64 {
             self.data.lock().unwrap().len().try_into().unwrap()
         }
 
-        fn read(&self, _req: Request) -> u64 {
-            panic!("Must not call byte read on this device")
+        fn read(&self, req: Request) -> u64 {
+            if req.size != RequestSize::Size8 {
+                panic!("Only supporting 8-byte reads");
+            }
+            let mut bytes = [0; 8];
+            self.read_bulk(req.addr, &mut bytes);
+            u64::from_le_bytes(bytes)
         }
 
-        fn write(&self, _req: Request, _value: u64) {
-            panic!("Must not call byte write on this device")
+        fn write(&self, req: Request, value: u64) {
+            if req.size != RequestSize::Size8 {
+                panic!("Only supporting 8-byte writes");
+            }
+            self.write_bulk(req.addr, &value.to_le_bytes());
         }
 
         fn read_bulk(&self, offset: u64, data: &mut [u8]) {
@@ -653,7 +660,7 @@ mod tests {
         ];
 
         // construct memory segment for a ring that can contain 4 TRBs
-        let ram = Arc::new(BulkOnlyDevice::new(&[0; 16 * 4]));
+        let ram = Arc::new(TestingRamDevice::new(&[0; 16 * 4]));
         let mut command_ring = CommandRing::new(ram.clone());
         command_ring.control(0x1);
 
