@@ -589,7 +589,7 @@ impl TransferRing {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum RequestParseError {
     #[error("Encountered unexpected TRB type. Expected type(s) {0:?}, got TRB {1:?}")]
     UnexpectedTrbType(Vec<u8>, TransferTrbVariant),
@@ -605,13 +605,12 @@ mod tests {
 
     use super::*;
 
-    /// A device that only accepts bulk reads and writes.
     #[derive(Debug)]
-    struct BulkOnlyDevice {
+    struct TestingRamDevice {
         data: Mutex<Vec<u8>>,
     }
 
-    impl BulkOnlyDevice {
+    impl TestingRamDevice {
         fn new(data: &[u8]) -> Self {
             Self {
                 data: Mutex::new(data.to_vec()),
@@ -619,17 +618,25 @@ mod tests {
         }
     }
 
-    impl BusDevice for BulkOnlyDevice {
+    impl BusDevice for TestingRamDevice {
         fn size(&self) -> u64 {
             self.data.lock().unwrap().len().try_into().unwrap()
         }
 
-        fn read(&self, _req: Request) -> u64 {
-            panic!("Must not call byte read on this device")
+        fn read(&self, req: Request) -> u64 {
+            if req.size != RequestSize::Size8 {
+                panic!("Only supporting 8-byte reads");
+            }
+            let mut bytes = [0; 8];
+            self.read_bulk(req.addr, &mut bytes);
+            u64::from_le_bytes(bytes)
         }
 
-        fn write(&self, _req: Request, _value: u64) {
-            panic!("Must not call byte write on this device")
+        fn write(&self, req: Request, value: u64) {
+            if req.size != RequestSize::Size8 {
+                panic!("Only supporting 8-byte writes");
+            }
+            self.write_bulk(req.addr, &value.to_le_bytes());
         }
 
         fn read_bulk(&self, offset: u64, data: &mut [u8]) {
@@ -653,7 +660,7 @@ mod tests {
         ];
 
         // construct memory segment for a ring that can contain 4 TRBs
-        let ram = Arc::new(BulkOnlyDevice::new(&[0; 16 * 4]));
+        let ram = Arc::new(TestingRamDevice::new(&[0; 16 * 4]));
         let mut command_ring = CommandRing::new(ram.clone());
         command_ring.control(0x1);
 
@@ -758,5 +765,127 @@ mod tests {
         } else {
             panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
         }
+    }
+
+    // test summary:
+    //
+    // This test checks the parsing of USB control requests from two and
+    // three TRBs as well as correct handling of wrap around/Link TRBs.
+    //
+    // steps:
+    //
+    // - transfer ring with 5 TRBs
+    // - prepare
+    //   [Setup Stage] [Data Stage] [Status Stage] [non-fresh TRB] [non-fresh TRB]
+    // - request should be parsed from the three TRBs
+    // - prepare
+    //   [Status Stage] [non-fresh TRB] [non-fresh TRB] [Setup Stage] [Link]
+    // - request should be parsed from the two TRBs
+    #[test]
+    fn transfer_ring_retrieve_control_requests() {
+        let setup = [
+            0x11, 0x22, 0x44, 0x33, 0x66, 0x55, 0x88, 0x77, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
+            0x00, 0x00,
+        ];
+        let data = [
+            0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c,
+            0x00, 0x00,
+        ];
+        let status = [
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x0,
+        ];
+        let link = [
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x18, 0x0, 0x0,
+        ];
+
+        // construct memory segment for a ring that can contain 5 TRBs and an endpoint context
+        let ram = Arc::new(TestingRamDevice::new(&[0; TRB_SIZE * 5 + 32]));
+        let offset_ep_context = TRB_SIZE as u64 * 5;
+        // setup dequeue pointer and cycle state in the endpoint context
+        // (dequeue pointer is 0, thus only setting cycle bit)
+        ram.write_bulk(offset_ep_context + 8, &[0x1]);
+        let ep = EndpointContext::new(offset_ep_context, ram.clone());
+        let transfer_ring = TransferRing::new(ep, ram.clone());
+
+        // the ring is still empty
+        let request = transfer_ring.next_request();
+        assert!(
+            request.is_none(),
+            "When no fresh request is on the transfer ring, next_request should return None, instead got: {:?}",
+            request
+        );
+
+        // place first request
+        // place setup
+        ram.write_bulk(0, &setup);
+        // set cycle bit
+        ram.write_bulk(12, &[0x1]);
+
+        // place data
+        ram.write_bulk(TRB_SIZE as u64, &data);
+        ram.write_bulk(TRB_SIZE as u64 + 12, &[0x1]);
+
+        // place status
+        ram.write_bulk(TRB_SIZE as u64 * 2, &status);
+        ram.write_bulk(TRB_SIZE as u64 * 2 + 12, &[0x1]);
+
+        // ring abstraction should parse correctly
+        let expected = Some(Ok(UsbRequest {
+            address: TRB_SIZE as u64 * 2,
+            request_type: 0x11,
+            request: 0x22,
+            value: 0x3344,
+            index: 0x5566,
+            length: 0x7788,
+            data: Some(0x1122334455667788),
+        }));
+        let actual = transfer_ring.next_request();
+        assert_eq!(expected, actual);
+
+        // no new command placed, should return no new command
+        let request = transfer_ring.next_request();
+        assert!(
+            request.is_none(),
+            "When no fresh request is on the transfer ring, next_request should return None, instead got: {:?}",
+            request
+        );
+
+        // place second request (include link TRB because the ring needs to
+        // wrap around)
+        // place setup
+        ram.write_bulk(TRB_SIZE as u64 * 3, &setup);
+        ram.write_bulk(TRB_SIZE as u64 * 3 + 12, &[0x1]);
+
+        // place link
+        ram.write_bulk(TRB_SIZE as u64 * 4, &link);
+        ram.write_bulk(TRB_SIZE as u64 * 4 + 12, &[0x1]);
+        // set cycle bit without affecting the toggle_cycle bit
+        ram.write_bulk(TRB_SIZE as u64 * 4 + 12, &[0x1 | link[12]]);
+
+        // place status
+        ram.write_bulk(0, &status);
+        // wrap around---cycle bit now needs to be 0
+        ram.write_bulk(0, &[0x0]);
+
+        // ring abstraction should parse correctly
+        let expected = Some(Ok(UsbRequest {
+            address: 0,
+            request_type: 0x11,
+            request: 0x22,
+            value: 0x3344,
+            index: 0x5566,
+            length: 0x7788,
+            data: None,
+        }));
+        let actual = transfer_ring.next_request();
+        assert_eq!(expected, actual);
+
+        // no new command placed, should return no new command
+        let request = transfer_ring.next_request();
+        assert!(
+            request.is_none(),
+            "When no fresh request is on the transfer ring, next_request should return None, instead got: {:?}",
+            request
+        );
     }
 }

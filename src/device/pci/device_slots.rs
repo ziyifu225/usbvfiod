@@ -243,7 +243,7 @@ impl EndpointContext {
     ///
     /// - address: the address of the endpoint context in guest memory.
     /// - dma_bus: reference to the guest memory.
-    const fn new(address: u64, dma_bus: BusDeviceRef) -> Self {
+    pub const fn new(address: u64, dma_bus: BusDeviceRef) -> Self {
         Self { address, dma_bus }
     }
 

@@ -10,7 +10,7 @@
 /// Stage and a Status Stage). `data` should then contain the pointer
 /// from the Data Stage).
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct UsbRequest {
     /// The guest address of the Status Stage of this request.
     pub address: u64,

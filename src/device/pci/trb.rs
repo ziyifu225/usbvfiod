@@ -420,7 +420,7 @@ impl CommandTrbVariant {
 }
 
 /// Custom error type to represent errors in TRB parsing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkTrbData {
     /// The address of the next ring segment.
     pub ring_segment_pointer: u64,
@@ -523,7 +523,7 @@ pub struct TransferTrb {
 }
 
 /// Represents a TRB that the driver can place on a transfer ring.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TransferTrbVariant {
     Normal,
     SetupStage(SetupStageTrbData),
@@ -566,7 +566,7 @@ impl TransferTrbVariant {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SetupStageTrbData {
     pub request_type: u8,
     pub request: u8,
@@ -609,7 +609,7 @@ impl TrbData for SetupStageTrbData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DataStageTrbData {
     pub data_pointer: u64,
     pub chain: bool,
@@ -645,7 +645,7 @@ impl TrbData for DataStageTrbData {
     }
 }
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum TrbParseError {
     #[error("TRB type {0} refers to \"{1}\", which is optional and not supported.")]
     UnsupportedOptionalCommand(u8, String),
