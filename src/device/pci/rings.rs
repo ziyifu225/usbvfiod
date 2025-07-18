@@ -589,7 +589,7 @@ impl TransferRing {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum RequestParseError {
     #[error("Encountered unexpected TRB type. Expected type(s) {0:?}, got TRB {1:?}")]
     UnexpectedTrbType(Vec<u8>, TransferTrbVariant),
