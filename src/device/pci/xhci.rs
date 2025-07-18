@@ -16,7 +16,7 @@ use crate::device::{
             RUN_BASE,
         },
         traits::PciDevice,
-        trb::{CompletionCode, EventTrb},
+        trb::{CommandTrbVariant, CompletionCode, EventTrb},
     },
 };
 
@@ -165,8 +165,8 @@ impl XhciController {
         debug!("Ding Dong!");
         // check command available
         let next = self.command_ring.next_command_trb();
-        if let Some((address, Ok(cmd_trb))) = next {
-            self.handle_command(address, cmd_trb);
+        if let Some(cmd) = next {
+            self.handle_command(cmd);
         } else {
             debug!(
                 "Doorbell was rang, but no (valid) command found on the command ring ({:?})",
@@ -175,42 +175,57 @@ impl XhciController {
         }
     }
 
-    fn handle_command(&mut self, address: u64, cmd: CommandTrb) {
-        debug!("handling command {:?} at {:#x}", cmd, address);
-        let completion_event = match cmd {
-            CommandTrb::EnableSlot => {
+    fn handle_command(&mut self, cmd: CommandTrb) {
+        debug!("handling command {:?} at {:#x}", cmd, cmd.address);
+        let completion_event = match cmd.variant {
+            CommandTrbVariant::EnableSlot => {
                 let (completion_code, slot_id) = self.handle_enable_slot();
-                EventTrb::new_command_completion_event_trb(address, 0, completion_code, slot_id)
+                EventTrb::new_command_completion_event_trb(cmd.address, 0, completion_code, slot_id)
             }
-            CommandTrb::DisableSlot => {
+            CommandTrbVariant::DisableSlot => {
                 // TODO this command probably requires more handling.
                 // Currently, we just acknowledge to not crash usbvfiod in the
                 // integration test.
-                EventTrb::new_command_completion_event_trb(address, 0, CompletionCode::Success, 1)
+                EventTrb::new_command_completion_event_trb(
+                    cmd.address,
+                    0,
+                    CompletionCode::Success,
+                    1,
+                )
             }
-            CommandTrb::AddressDevice(data) => {
+            CommandTrbVariant::AddressDevice(data) => {
                 self.handle_address_device(&data);
                 EventTrb::new_command_completion_event_trb(
-                    address,
+                    cmd.address,
                     0,
                     CompletionCode::Success,
                     data.slot_id,
                 )
             }
-            CommandTrb::ConfigureEndpoint => todo!(),
-            CommandTrb::EvaluateContext => todo!(),
-            CommandTrb::ResetEndpoint => todo!(),
-            CommandTrb::StopEndpoint => {
+            CommandTrbVariant::ConfigureEndpoint => todo!(),
+            CommandTrbVariant::EvaluateContext => todo!(),
+            CommandTrbVariant::ResetEndpoint => todo!(),
+            CommandTrbVariant::StopEndpoint => {
                 // TODO this command probably requires more handling.
                 // Currently, we just acknowledge to not crash usbvfiod in the
                 // integration test.
-                EventTrb::new_command_completion_event_trb(address, 0, CompletionCode::Success, 1)
+                EventTrb::new_command_completion_event_trb(
+                    cmd.address,
+                    0,
+                    CompletionCode::Success,
+                    1,
+                )
             }
-            CommandTrb::SetTrDequeuePointer => todo!(),
-            CommandTrb::ResetDevice => todo!(),
-            CommandTrb::ForceHeader => todo!(),
-            CommandTrb::NoOp => todo!(),
-            CommandTrb::Link(_) => unreachable!(),
+            CommandTrbVariant::SetTrDequeuePointer => todo!(),
+            CommandTrbVariant::ResetDevice => todo!(),
+            CommandTrbVariant::ForceHeader => todo!(),
+            CommandTrbVariant::NoOp => todo!(),
+            CommandTrbVariant::Link(_) => unreachable!(),
+            CommandTrbVariant::Unrecognized(trb_buffer, error) => todo!(
+                "encountered unrecognized command (error: {}, trb: {:?})",
+                error,
+                trb_buffer
+            ),
         };
         self.event_ring.enqueue(&completion_event);
         self.interrupt_line.interrupt();
@@ -251,7 +266,7 @@ impl XhciController {
             .get_device_context(1)
             .get_control_transfer_ring();
 
-        let (address, request) = match transfer_ring.next_request() {
+        let request = match transfer_ring.next_request() {
             None => {
                 // XXX currently, we expect that a doorbell ring always
                 // notifies us about a new control request. We want to
@@ -282,8 +297,14 @@ impl XhciController {
         // TODO forward request to device
 
         // send transfer event
-        let trb =
-            EventTrb::new_transfer_event_trb(address, 0, CompletionCode::Success, false, 1, 1);
+        let trb = EventTrb::new_transfer_event_trb(
+            request.address,
+            0,
+            CompletionCode::Success,
+            false,
+            1,
+            1,
+        );
         self.event_ring.enqueue(&trb);
         self.interrupt_line.interrupt();
         debug!("sent Transfer Event and signaled interrupt");
