@@ -294,7 +294,10 @@ impl XhciController {
             request.length,
             request.data
         );
-        // TODO forward request to device
+        // forward request to device
+        if let Some(device) = self.real_device.as_ref() {
+            device.control_transfer(&request, &self.dma_bus);
+        }
 
         // send transfer event
         let trb = EventTrb::new_transfer_event_trb(
