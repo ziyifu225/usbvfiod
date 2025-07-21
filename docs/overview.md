@@ -10,3 +10,4 @@ professional support.
 ## For Developers
 
 - [Architecture Overview](./developers/architecture.md)
+- [Code Guidelines](./developers/guidelines.md)
