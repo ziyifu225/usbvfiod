@@ -98,7 +98,7 @@ impl DeviceSlotManager {
         );
         // lookup address of device context in device context base address array
         let device_context_address = self.dma_bus.read(Request::new(
-            self.dcbaap + slot_id as u64 * 8,
+            self.dcbaap.wrapping_add(slot_id as u64 * 8),
             RequestSize::Size8,
         ));
 
@@ -203,7 +203,8 @@ impl DeviceContext {
     fn get_endpoint_context_internal(&self, index: u64) -> EndpointContext {
         assert!((1..=31).contains(&index));
 
-        EndpointContext::new(self.address + 32 * index, self.dma_bus.clone())
+        let addr = self.address.wrapping_add(32 * index);
+        EndpointContext::new(addr, self.dma_bus.clone())
     }
 
     /// Give access to context of the default control endpoint.
@@ -250,9 +251,10 @@ impl EndpointContext {
     /// DMA read the dequeue pointer and consumer cycle state of the endpoint's
     /// transfer ring.
     pub fn get_dequeue_pointer_and_cycle_state(&self) -> (u64, bool) {
-        let bytes = self
-            .dma_bus
-            .read(Request::new(self.address + 8, RequestSize::Size8));
+        let bytes = self.dma_bus.read(Request::new(
+            self.address.wrapping_add(8),
+            RequestSize::Size8,
+        ));
         let dequeue_pointer = bytes & !0xf;
         let cycle_state = bytes & 0x1 != 0;
         (dequeue_pointer, cycle_state)
@@ -268,7 +270,7 @@ impl EndpointContext {
             "dequeue_pointer has to be aligned to 16 bytes"
         );
         self.dma_bus.write(
-            Request::new(self.address + 8, RequestSize::Size8),
+            Request::new(self.address.wrapping_add(8), RequestSize::Size8),
             dequeue_pointer | cycle_state as u64,
         )
     }

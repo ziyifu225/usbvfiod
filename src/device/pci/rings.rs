@@ -111,12 +111,14 @@ impl EventRing {
         assert_eq!(erstba & 0x3f, 0, "unaligned event ring base address");
 
         self.base_address = erstba;
-        self.enqueue_pointer = self
-            .dma_bus
-            .read(Request::new(erstba + BASE_ADDR, RequestSize::Size8));
+        self.enqueue_pointer = self.dma_bus.read(Request::new(
+            erstba.wrapping_add(BASE_ADDR),
+            RequestSize::Size8,
+        ));
         self.trb_count = self
             .dma_bus
-            .read(Request::new(erstba + SIZE, RequestSize::Size4)) as u32;
+            .read(Request::new(erstba.wrapping_add(SIZE), RequestSize::Size4))
+            as u32;
         self.cycle_state = true;
 
         debug!("event ring segment table is at {:#x}", erstba);
@@ -170,7 +172,7 @@ impl EventRing {
 
         let enqueue_address = self.enqueue_pointer;
 
-        self.enqueue_pointer += TRB_SIZE as u64;
+        self.enqueue_pointer = self.enqueue_pointer.wrapping_add(TRB_SIZE as u64);
         self.trb_count -= 1;
 
         trace!(
@@ -324,7 +326,7 @@ impl CommandRing {
         let address = self.dequeue_pointer;
 
         // advance to next TRB
-        self.dequeue_pointer += TRB_SIZE as u64;
+        self.dequeue_pointer = self.dequeue_pointer.wrapping_add(TRB_SIZE as u64);
 
         // return parsed result
         Some(CommandTrb {
@@ -421,7 +423,7 @@ impl TransferRing {
         let address = dequeue_pointer;
 
         // advance to next TRB
-        dequeue_pointer += TRB_SIZE as u64;
+        dequeue_pointer = dequeue_pointer.wrapping_add(TRB_SIZE as u64);
         self.endpoint_context
             .set_dequeue_pointer_and_cycle_state(dequeue_pointer, cycle_state);
 
