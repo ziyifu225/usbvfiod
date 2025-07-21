@@ -226,7 +226,20 @@ impl XhciController {
                 )
             }
             CommandTrbVariant::SetTrDequeuePointer => todo!(),
-            CommandTrbVariant::ResetDevice => todo!(),
+            CommandTrbVariant::ResetDevice => {
+                // TODO this command probably requires more handling. The guest
+                // driver will attempt resets when descriptors do not match what
+                // the virtual port announces.
+                // Currently, we just acknowledge to not crash usbvfiod when
+                // testing with unsupported devices.
+                warn!("device reset! the driver probably didn't like it.");
+                EventTrb::new_command_completion_event_trb(
+                    cmd.address,
+                    0,
+                    CompletionCode::Success,
+                    1,
+                )
+            }
             CommandTrbVariant::ForceHeader => todo!(),
             CommandTrbVariant::NoOp => todo!(),
             CommandTrbVariant::Link(_) => unreachable!(),
