@@ -4,7 +4,7 @@
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
 use std::sync::{Arc, Mutex};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::device::{
     bus::{BusDeviceRef, Request, SingleThreadedBusDevice},
@@ -24,14 +24,18 @@ use super::{
     config_space::BarInfo,
     constants::xhci::operational::usbsts,
     device_slots::DeviceSlotManager,
+    realdevice::RealDevice,
     registers::PortscRegister,
     rings::{CommandRing, EventRing},
     trb::{AddressDeviceCommandTrbData, CommandTrb},
 };
 
 /// The emulation of a XHCI controller.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct XhciController {
+    /// real USB devices
+    real_device: Option<Box<dyn RealDevice>>,
+
     /// A reference to the VM memory to perform DMA on.
     #[allow(unused)]
     dma_bus: BusDeviceRef,
@@ -78,6 +82,7 @@ impl XhciController {
         let dma_bus_for_device_slot_manager = dma_bus.clone();
 
         Self {
+            real_device: None,
             dma_bus,
             config_space: ConfigSpaceBuilder::new(vendor::REDHAT, device::REDHAT_XHCI)
                 .class(class::SERIAL, subclass::SERIAL_USB, progif::USB_XHCI)
@@ -97,6 +102,10 @@ impl XhciController {
                 portsc::CCS | portsc::PED | portsc::PP | portsc::CSC | portsc::PEC | portsc::PRC,
             ),
         }
+    }
+
+    pub fn set_device(&mut self, device: Box<dyn RealDevice>) {
+        self.real_device = Some(device);
     }
 
     /// Configure the interrupt line for the controller.
