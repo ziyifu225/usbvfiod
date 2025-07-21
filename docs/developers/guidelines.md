@@ -13,9 +13,4 @@ operation, only when the USB driver in the guest wants to shoot
 itself in the foot. In such cases, we want to behave like a physical
 XHCI controller and wrap around.
 
-If we used normal calculations, the behavior in overflow situations
-would differ between builds:
-
-- debug builds crash when an overflow occurs due to inserted overflow
-checks
-- release build perform wrap-around on overflow
+Explicitly treating the calculations as wrapping aligns the behavior between debug and release builds.
