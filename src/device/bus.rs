@@ -450,7 +450,7 @@ impl Default for Bus {
 /// Information for a single bulk request to a specific device.
 ///
 /// See [`Bus::iter_bulk_request`].
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct BulkRequestChunk<'a> {
     /// The device to perform the bulk request on.
     device: &'a dyn BusDevice,
@@ -465,6 +465,7 @@ struct BulkRequestChunk<'a> {
 /// An iterator to split bulk requests.
 ///
 /// See [`Bus::iter_bulk_request`].
+#[derive(Debug)]
 struct BulkRequestIterator<'a> {
     bus: &'a Bus,
 
