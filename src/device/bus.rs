@@ -772,7 +772,7 @@ mod tests {
 
     /// A device that returns a constant value for all read requests
     /// and expects all writes to have that value as well.
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct ConstDevice {
         value: u64,
         size: u64,
