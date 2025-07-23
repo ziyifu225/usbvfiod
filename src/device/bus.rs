@@ -931,7 +931,7 @@ mod tests {
 
     /// A device that asserts all read and write requests are
     /// for a configured address. It returns constant 0 on read.
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct AddressCheckDevice {
         expected_address: u64,
         size: u64,
