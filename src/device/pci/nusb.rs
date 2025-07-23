@@ -4,7 +4,11 @@ use tracing::{debug, warn};
 use crate::device::bus::BusDeviceRef;
 
 use super::{realdevice::RealDevice, usbrequest::UsbRequest};
-use std::{fmt::Debug, time::Duration};
+use std::{
+    fmt::Debug,
+    sync::atomic::{fence, Ordering},
+    time::Duration,
+};
 
 pub struct NusbDeviceWrapper {
     device: nusb::Device,
@@ -47,6 +51,10 @@ impl NusbDeviceWrapper {
         // TODO: ideally the control transfer targets the right location for us and we get rid
         // of the additional DMA write here.
         dma_bus.write_bulk(request.data.unwrap(), &data);
+
+        // Ensure the data copy to guest memory completes before the subsequent
+        // transfer event write completes.
+        fence(Ordering::Release);
     }
 
     fn control_transfer_host_to_device(&self, request: &UsbRequest, _dma_bus: &BusDeviceRef) {
