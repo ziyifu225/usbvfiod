@@ -3,7 +3,10 @@
 //! The specification is available
 //! [here](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf).
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{fence, Ordering},
+    Arc, Mutex,
+};
 use tracing::{debug, warn};
 
 use crate::device::{
@@ -258,6 +261,15 @@ impl XhciController {
                 trb_buffer
             ),
         };
+        // Command handlers might have performed stores to guest memory.
+        // The stores have to be finished before the command completion
+        // event is written (essentially releasing the data to the driver).
+        //
+        // Not all commands write to guest memory, so this fence is sometimes
+        // not necessary. However, because it declutters the code and avoids
+        // missing a fence where it is needed, we choose to place a release
+        // barrier before every event enqueue.
+        fence(Ordering::Release);
         self.event_ring.enqueue(&completion_event);
         self.interrupt_line.interrupt();
     }
