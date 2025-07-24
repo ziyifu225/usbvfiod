@@ -285,7 +285,7 @@ mod tests {
 
     use super::*;
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     struct DummyMemory {}
 
     impl BusDevice for DummyMemory {
