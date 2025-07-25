@@ -40,3 +40,4 @@ For consistency and readability, follow this trait order when deriving multiple 
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+```
