@@ -47,7 +47,7 @@ pub struct Cli {
 }
 
 /// The location of the server socket for the vfio-user client connection.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum ServerSocket<'a> {
     /// The socket is already open.
     #[allow(dead_code)]
