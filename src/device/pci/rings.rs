@@ -30,7 +30,7 @@ use crate::device::{
 /// This implementation is a simplified version of the full mechanism specified
 /// in the XHCI specification. We assume that the Event Ring Segment Table only
 /// holds a single segment.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EventRing {
     /// Access to guest memory.
     ///
@@ -191,7 +191,7 @@ impl EventRing {
 
 /// The Command Ring: A unidirectional means of communication, allowing the
 /// driver to send commands to the XHCI controller.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CommandRing {
     /// Access to guest memory.
     ///
@@ -680,16 +680,11 @@ mod tests {
         ram.write_bulk(12, &[0x1]);
 
         // ring abstraction should parse correctly
-        let trb = command_ring.next_command_trb();
-        if let Some(CommandTrb {
-            address,
+        let expected = Some(CommandTrb {
+            address: 0,
             variant: CommandTrbVariant::NoOp,
-        }) = trb
-        {
-            assert_eq!(0, address, "incorrect address of the next TRB returned");
-        } else {
-            panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
-        }
+        });
+        assert_eq!(command_ring.next_command_trb(), expected);
 
         // no new command placed, should return no new command
         let trb = command_ring.next_command_trb();
@@ -706,28 +701,18 @@ mod tests {
         ram.write_bulk(32 + 12, &[0x1]);
 
         // parse first noop
-        let trb = command_ring.next_command_trb();
-        if let Some(CommandTrb {
-            address,
+        let expected = Some(CommandTrb {
+            address: 16,
             variant: CommandTrbVariant::NoOp,
-        }) = trb
-        {
-            assert_eq!(16, address, "incorrect address of the next TRB returned");
-        } else {
-            panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
-        }
+        });
+        assert_eq!(command_ring.next_command_trb(), expected);
 
         // parse second noop
-        let trb = command_ring.next_command_trb();
-        if let Some(CommandTrb {
-            address,
+        let expected = Some(CommandTrb {
+            address: 32,
             variant: CommandTrbVariant::NoOp,
-        }) = trb
-        {
-            assert_eq!(32, address, "incorrect address of the next TRB returned");
-        } else {
-            panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
-        }
+        });
+        assert_eq!(command_ring.next_command_trb(), expected);
 
         // no new command placed, should return no new command
         let trb = command_ring.next_command_trb();
@@ -757,16 +742,11 @@ mod tests {
         ram.write_bulk(12, &[0x0]);
 
         // parse refreshed noop
-        let trb = command_ring.next_command_trb();
-        if let Some(CommandTrb {
-            address,
+        let expected = Some(CommandTrb {
+            address: 0,
             variant: CommandTrbVariant::NoOp,
-        }) = trb
-        {
-            assert_eq!(0, address, "incorrect address of the next TRB returned");
-        } else {
-            panic!("Expected to parse a NoOpCommand, instead got: {:?}", trb);
-        }
+        });
+        assert_eq!(command_ring.next_command_trb(), expected);
     }
 
     // test summary:
