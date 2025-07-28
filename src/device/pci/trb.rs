@@ -331,7 +331,7 @@ where
 }
 
 /// Represents a TRB that the driver can place on the command ring.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CommandTrb {
     /// Guest memory address where the driver placed the TRB.
     pub address: u64,
@@ -340,7 +340,7 @@ pub struct CommandTrb {
 }
 
 /// Represents a TRB that the driver can place on the command ring.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum CommandTrbVariant {
     EnableSlot,
     DisableSlot,
@@ -464,7 +464,7 @@ impl TrbData for LinkTrbData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AddressDeviceCommandTrbData {
     /// The address of the input context.
     pub input_context_pointer: u64,
@@ -514,7 +514,7 @@ impl TrbData for AddressDeviceCommandTrbData {
 }
 
 /// Represents a TRB that the driver can place on a transfer ring.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TransferTrb {
     /// Guest memory address where the driver placed the TRB.
     pub address: u64,
@@ -665,13 +665,8 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24,
             0x00, 0x00,
         ];
-        let trb = CommandTrbVariant::parse(trb_bytes);
-        if !matches!(trb, CommandTrbVariant::EnableSlot) {
-            panic!(
-                "A TRB with TRB type 9 should result in a CommandTrb::EnableSlotCommand. Got instead: {:?}",
-                trb
-            );
-        }
+        let expected = CommandTrbVariant::EnableSlot;
+        assert_eq!(CommandTrbVariant::parse(trb_bytes), expected);
     }
 
     #[test]
@@ -680,22 +675,11 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
             0x00, 0x00,
         ];
-        let trb = CommandTrbVariant::parse(trb_bytes);
-        if let CommandTrbVariant::Link(link_data) = trb {
-            assert_eq!(
-                0x1122334455667780, link_data.ring_segment_pointer,
-                "link_segment_pointer was parsed incorrectly."
-            );
-            assert!(
-                link_data.toggle_cycle,
-                "toggle_cycle bit was parsed incorrectly."
-            );
-        } else {
-            panic!(
-                "A TRB with TRB type 6 should result in a CommandTrb::Link. Got instead: {:?}",
-                trb
-            );
-        }
+        let expected = CommandTrbVariant::Link(LinkTrbData {
+            ring_segment_pointer: 0x1122334455667780,
+            toggle_cycle: true,
+        });
+        assert_eq!(CommandTrbVariant::parse(trb_bytes), expected);
     }
 
     #[test]
@@ -704,23 +688,12 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x2e,
             0x00, 0x13,
         ];
-        let trb = CommandTrbVariant::parse(trb_bytes);
-        if let CommandTrbVariant::AddressDevice(data) = trb {
-            assert_eq!(
-                0x1122334455667780, data.input_context_pointer,
-                "input_context_pointer was parsed incorrectly."
-            );
-            assert!(
-                data.block_set_address_request,
-                "BSR bit was parsed incorrectly."
-            );
-            assert_eq!(0x13, data.slot_id, "slot_id was parsed incorrectly.");
-        } else {
-            panic!(
-                "A TRB with TRB type 11 should result in a CommandTrb::AddressDeviceCommand. Got instead: {:?}",
-                trb
-            );
-        }
+        let expected = CommandTrbVariant::AddressDevice(AddressDeviceCommandTrbData {
+            input_context_pointer: 0x1122334455667780,
+            block_set_address_request: true,
+            slot_id: 0x13,
+        });
+        assert_eq!(CommandTrbVariant::parse(trb_bytes), expected);
     }
 
     #[test]
@@ -758,22 +731,11 @@ mod tests {
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
             0x00, 0x00,
         ];
-        let trb = TransferTrbVariant::parse(trb_bytes);
-        if let TransferTrbVariant::Link(link_data) = trb {
-            assert_eq!(
-                0x1122334455667780, link_data.ring_segment_pointer,
-                "link_segment_pointer was parsed incorrectly."
-            );
-            assert!(
-                link_data.toggle_cycle,
-                "toggle_cycle bit was parsed incorrectly."
-            );
-        } else {
-            panic!(
-                "A TRB with TRB type 6 should result in a TransferTrb::Link. Got instead: {:?}",
-                trb
-            );
-        }
+        let expected = TransferTrbVariant::Link(LinkTrbData {
+            ring_segment_pointer: 0x1122334455667780,
+            toggle_cycle: true,
+        });
+        assert_eq!(TransferTrbVariant::parse(trb_bytes), expected);
     }
 
     #[test]
@@ -782,22 +744,14 @@ mod tests {
             0x11, 0x22, 0x44, 0x33, 0x66, 0x55, 0x88, 0x77, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
             0x00, 0x00,
         ];
-        let trb = TransferTrbVariant::parse(trb_bytes);
-        if let TransferTrbVariant::SetupStage(data) = trb {
-            assert_eq!(
-                0x11, data.request_type,
-                "request_type was parsed incorrectly."
-            );
-            assert_eq!(0x22, data.request, "request was parsed incorrectly.");
-            assert_eq!(0x3344, data.value, "value was parsed incorrectly.");
-            assert_eq!(0x5566, data.index, "value was parsed incorrectly.");
-            assert_eq!(0x7788, data.length, "value was parsed incorrectly.");
-        } else {
-            panic!(
-                "A TRB with TRB type 2 should result in a TransferTrb::StatusStage. Got instead: {:?}",
-                trb
-            );
-        }
+        let expected = TransferTrbVariant::SetupStage(SetupStageTrbData {
+            request_type: 0x11,
+            request: 0x22,
+            value: 0x3344,
+            index: 0x5566,
+            length: 0x7788,
+        });
+        assert_eq!(TransferTrbVariant::parse(trb_bytes), expected);
     }
 
     #[test]
@@ -806,17 +760,10 @@ mod tests {
             0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c,
             0x00, 0x00,
         ];
-        let trb = TransferTrbVariant::parse(trb_bytes);
-        if let TransferTrbVariant::DataStage(data) = trb {
-            assert_eq!(
-                0x1122334455667788, data.data_pointer,
-                "request_type was parsed incorrectly."
-            );
-        } else {
-            panic!(
-                "A TRB with TRB type 3 should result in a TransferTrb::DataStage. Got instead: {:?}",
-                trb
-            );
-        }
+        let expected = TransferTrbVariant::DataStage(DataStageTrbData {
+            data_pointer: 0x1122334455667788,
+            chain: false,
+        });
+        assert_eq!(TransferTrbVariant::parse(trb_bytes), expected);
     }
 }
