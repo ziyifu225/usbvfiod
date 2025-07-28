@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use nusb::MaybeFuture;
 use tracing::{debug, info, trace};
 
 use vfio_bindings::bindings::vfio::{
@@ -96,7 +97,7 @@ impl XhciBackend {
             .open(path)
             .with_context(|| format!("Failed to open USB device file: {}", path.display()))?;
 
-        self.add_device(nusb::Device::from_fd(file.into())?)
+        self.add_device(nusb::Device::from_fd(file.into()).wait()?)
     }
 }
 
