@@ -348,7 +348,7 @@ pub enum CommandTrbVariant {
     ConfigureEndpoint,
     EvaluateContext,
     ResetEndpoint,
-    StopEndpoint,
+    StopEndpoint(StopEndpointCommandTrbData),
     SetTrDequeuePointer,
     ResetDevice,
     ForceHeader,
@@ -384,7 +384,7 @@ impl CommandTrbVariant {
             trb_types::CONFIGURE_ENDPOINT_COMMAND => Self::ConfigureEndpoint,
             trb_types::EVALUATE_CONTEXT_COMMAND => Self::EvaluateContext,
             trb_types::RESET_ENDPOINT_COMMAND => Self::ResetEndpoint,
-            trb_types::STOP_ENDPOINT_COMMAND => Self::StopEndpoint,
+            trb_types::STOP_ENDPOINT_COMMAND => parse(Self::StopEndpoint, bytes),
             trb_types::SET_TR_DEQUEUE_POINTER_COMMAND => Self::SetTrDequeuePointer,
             trb_types::RESET_DEVICE_COMMAND => Self::ResetDevice,
             trb_types::FORCE_EVENT_COMMAND => Self::Unrecognized(
@@ -508,6 +508,42 @@ impl TrbData for AddressDeviceCommandTrbData {
         Ok(Self {
             input_context_pointer,
             block_set_address_request,
+            slot_id,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct StopEndpointCommandTrbData {
+    /// The endpoint to stop.
+    pub endpoint_id: u8,
+    /// The associated Slot ID.
+    pub slot_id: u8,
+}
+
+impl TrbData for StopEndpointCommandTrbData {
+    /// Parse data of a Stop Endpoint Command TRB.
+    ///
+    /// Only `CommandTrb::try_from` should call this function.
+    ///
+    /// # Limitations
+    ///
+    /// The function currently does not check if the slice respects all RsvdZ
+    /// fields.
+    fn parse(trb_bytes: RawTrbBuffer) -> Result<Self, TrbParseError> {
+        let trb_type = trb_bytes[13] >> 2;
+        assert_eq!(
+            trb_types::STOP_ENDPOINT_COMMAND,
+            trb_type,
+            "StopEndpointCommandTrbData::parse called on TRB data with incorrect TRB type ({:#x})",
+            trb_type
+        );
+
+        let endpoint_id = trb_bytes[14] & 0x1f;
+        let slot_id = trb_bytes[15];
+
+        Ok(Self {
+            endpoint_id,
             slot_id,
         })
     }
@@ -692,6 +728,19 @@ mod tests {
             input_context_pointer: 0x1122334455667780,
             block_set_address_request: true,
             slot_id: 0x13,
+        });
+        assert_eq!(CommandTrbVariant::parse(trb_bytes), expected);
+    }
+
+    #[test]
+    fn test_parse_stop_endpoint_command_trb() {
+        let trb_bytes = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3c,
+            0x02, 0x10,
+        ];
+        let expected = CommandTrbVariant::StopEndpoint(StopEndpointCommandTrbData {
+            endpoint_id: 0x02,
+            slot_id: 0x10,
         });
         assert_eq!(CommandTrbVariant::parse(trb_bytes), expected);
     }

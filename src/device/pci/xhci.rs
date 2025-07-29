@@ -226,15 +226,16 @@ impl XhciController {
             }
             CommandTrbVariant::EvaluateContext => todo!(),
             CommandTrbVariant::ResetEndpoint => todo!(),
-            CommandTrbVariant::StopEndpoint => {
+            CommandTrbVariant::StopEndpoint(data) => {
                 // TODO this command probably requires more handling.
                 // Currently, we just acknowledge to not crash usbvfiod in the
                 // integration test.
+                let _ = data.endpoint_id;
                 EventTrb::new_command_completion_event_trb(
                     cmd.address,
                     0,
                     CompletionCode::Success,
-                    1,
+                    data.slot_id,
                 )
             }
             CommandTrbVariant::SetTrDequeuePointer => todo!(),
