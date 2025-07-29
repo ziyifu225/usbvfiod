@@ -696,7 +696,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_enable_slot_command_trb() {
+    fn parse_enable_slot_command_trb() {
         let trb_bytes = [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24,
             0x00, 0x00,
@@ -706,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_link_trb_as_command() {
+    fn parse_link_trb_as_command() {
         let trb_bytes = [
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x18,
             0x00, 0x00,
@@ -719,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_address_device_command_trb() {
+    fn parse_address_device_command_trb() {
         let trb_bytes = [
             0x80, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, 0x00, 0x00, 0x02, 0x2e,
             0x00, 0x13,
@@ -733,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_stop_endpoint_command_trb() {
+    fn parse_stop_endpoint_command_trb() {
         let trb_bytes = [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3c,
             0x02, 0x10,
@@ -746,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn test_command_completion_event_trb() {
+    fn command_completion_event_trb() {
         let trb = EventTrb::new_command_completion_event_trb(
             0x1122334455667780,
             0xaabbcc,
@@ -763,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn test_port_status_change_event_trb() {
+    fn port_status_change_event_trb() {
         let trb = EventTrb::new_port_status_change_event_trb(2);
         assert_eq!(
             [
