@@ -77,6 +77,19 @@ pub struct EventRing {
     /// event ring (i.e., in our case, when we move from the back of the
     /// segment to the front of the single segment).
     cycle_state: bool,
+    /// The base address of the first (and only) Event Ring segment.
+    ///
+    /// This value is derived from the Event Ring Segment Table during
+    /// controller initialization (ERSTBA write).
+    /// We use this address to wrap around the enqueue pointer once the
+    /// segment is full.
+    segment_base: u64,
+    /// The number of TRBs that the first (and only) segment can hold.
+    ///
+    /// The size is parsed from the Event Ring Segment Table at setup time.
+    /// When the TRB count reaches 0, the ring wraps to `segment_base`
+    /// and this value is used to reset `trb_count`.
+    segment_size: u32,
 }
 
 impl EventRing {
@@ -93,6 +106,8 @@ impl EventRing {
             enqueue_pointer: 0,
             trb_count: 0,
             cycle_state: false,
+            segment_base: 0,
+            segment_size: 0,
         }
     }
 
@@ -111,15 +126,17 @@ impl EventRing {
         assert_eq!(erstba & 0x3f, 0, "unaligned event ring base address");
 
         self.base_address = erstba;
-        self.enqueue_pointer = self.dma_bus.read(Request::new(
+        self.segment_base = self.dma_bus.read(Request::new(
             erstba.wrapping_add(BASE_ADDR),
             RequestSize::Size8,
         ));
-        self.trb_count = self
+        self.segment_size = self
             .dma_bus
             .read(Request::new(erstba.wrapping_add(SIZE), RequestSize::Size4))
             as u32;
         self.cycle_state = true;
+        self.enqueue_pointer = self.segment_base;
+        self.trb_count = self.segment_size;
 
         debug!("event ring segment table is at {:#x}", erstba);
         debug!(
@@ -152,40 +169,72 @@ impl EventRing {
         self.dequeue_pointer
     }
 
-    /// Enqueue an Event TRB to the ring.
-    ///
-    /// # Current Limitations
-    ///
-    /// The method is not capable of wrapping around to the start of the single
-    /// segment. We fail once the first segment is full
+    /// Enqueue a new Event TRB into the Ring.
     ///
     /// # Parameters
-    ///
     /// - `trb`: the TRB to enqueue.
+    ///
+    /// # Limitations
+    /// The current implementation does not handle ring-full recovery and will panic (`todo!()`) in that case.
     pub fn enqueue(&mut self, trb: &EventTrb) {
+        // TODO: Proper handling of full Event Ring
+        // According to xHCI §4.9.4, the xHC must:
+        //
+        // 1. Stop fetching new TRBs from the Transfer and Command Rings.
+        // 2. Emit an Event Ring Full Error Event TRB to the Event Ring (if supported).
+        // 3. Advance the Event Ring Enqueue Pointer (EREP) accordingly.
+        // 4. Wait for software (the host driver) to advance the Event Ring Dequeue Pointer (ERDP),
+        //    at which point normal event generation can resume.
         if self.check_event_ring_full() {
-            todo!();
+            todo!("The Event Ring is full!");
         }
 
         self.dma_bus
             .write_bulk(self.enqueue_pointer, &trb.to_bytes(self.cycle_state));
 
-        let enqueue_address = self.enqueue_pointer;
-
-        self.enqueue_pointer = self.enqueue_pointer.wrapping_add(TRB_SIZE as u64);
         self.trb_count -= 1;
 
         trace!(
-            "enqueued TRB in first segment of event ring at address {:#x}. Space for {} more TRBs left (TRB: {:?})",
-            enqueue_address, self.trb_count, trb
+            "enqueued TRB in first segment of event ring at address {:#x}. Space for {} more TRBs left in segment (TRB: {:?})",
+            self.enqueue_pointer, self.trb_count, trb
         );
+
+        self.advance_enqueue_pointer();
     }
 
-    // The method is currently not capable of dealing with wrapping around to
-    // the start of the single segment and just reports full once the segment
-    // is filled up.
+    /// Advances the enqueue pointer to the next slot in the event ring,
+    /// wrapping to the start when the end of the segment is reached.
+    fn advance_enqueue_pointer(&mut self) {
+        if self.trb_count == 0 {
+            self.wraparound();
+        } else {
+            self.enqueue_pointer = self.enqueue_pointer.wrapping_add(TRB_SIZE as u64);
+        }
+    }
+
+    /// Checks whether the Event Ring is full, based on xHCI §4.9.4.
+    ///
+    /// # Return
+    /// - `true` if the Event Ring is full and an Event Ring Full Error Event should be enqueued at the current position.
+    /// - `false` if there is at least one more slot available.
     const fn check_event_ring_full(&self) -> bool {
-        self.trb_count == 0
+        self.dequeue_pointer
+            == match self.trb_count {
+                1 => self.segment_base,
+                _ => self.enqueue_pointer.wrapping_add(TRB_SIZE as u64),
+            }
+    }
+
+    /// Wraps the Event Ring back to the segment base to start a new cycle.
+    fn wraparound(&mut self) {
+        self.enqueue_pointer = self.segment_base;
+        self.trb_count = self.segment_size;
+        self.cycle_state = !self.cycle_state;
+
+        trace!(
+            "Wrapped around event ring to base {:#x}, cycle_state flipped",
+            self.segment_base
+        );
     }
 }
 
@@ -604,6 +653,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::device::bus::BusDevice;
+    use crate::device::pci::trb::CompletionCode;
 
     use super::*;
 
@@ -626,12 +676,19 @@ mod tests {
         }
 
         fn read(&self, req: Request) -> u64 {
-            if req.size != RequestSize::Size8 {
-                panic!("Only supporting 8-byte reads");
+            match req.size {
+                RequestSize::Size8 => {
+                    let mut bytes = [0; 8];
+                    self.read_bulk(req.addr, &mut bytes);
+                    u64::from_le_bytes(bytes)
+                }
+                RequestSize::Size4 => {
+                    let mut bytes = [0; 4];
+                    self.read_bulk(req.addr, &mut bytes);
+                    u32::from_le_bytes(bytes) as u64
+                }
+                _ => panic!("Only supporting 4-byte and 8-byte reads"),
             }
-            let mut bytes = [0; 8];
-            self.read_bulk(req.addr, &mut bytes);
-            u64::from_le_bytes(bytes)
         }
 
         fn write(&self, req: Request, value: u64) {
@@ -650,6 +707,85 @@ mod tests {
             let offset: usize = offset.try_into().unwrap();
             self.data.lock().unwrap()[offset..(offset + data.len())].copy_from_slice(data)
         }
+    }
+
+    fn init_ram_and_ring() -> (Arc<TestingRamDevice>, EventRing) {
+        let erste = [
+            // segment_base = 0x10
+            // trb_count = 4
+            0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+
+        let ram = Arc::new(TestingRamDevice::new(&[0; 0x50]));
+        ram.write_bulk(0x0, &erste);
+        let mut ring = EventRing::new(ram.clone());
+        ring.configure(0x0);
+        ring.update_dequeue_pointer(ring.segment_base);
+
+        (ram, ring)
+    }
+
+    fn dummy_trb() -> EventTrb {
+        EventTrb::new_transfer_event_trb(
+            0,                       // trb_pointer
+            0,                       // trb_transfer_length
+            CompletionCode::Success, // completion_code
+            false,                   // event_data
+            1,                       // endpoint_id
+            1,                       // slot_id
+        )
+    }
+
+    fn assert_trb_written(ram: &TestingRamDevice, addr: u64, cycle_state: bool) {
+        let mut buf = [0u8; 16];
+        ram.read_bulk(addr, &mut buf);
+        let cycle_bit = buf[12] & 0x1 != 0;
+        assert_eq!(
+            cycle_bit, cycle_state,
+            "TRB not written at address {:#x}",
+            addr
+        );
+    }
+
+    #[test]
+    fn event_ring_start_empty_enqueue_fill_then_wraparound_after_dequeue_pointer_move() {
+        let (ram, mut ring) = init_ram_and_ring();
+
+        ring.enqueue(&dummy_trb()); // TRB 1
+        ring.enqueue(&dummy_trb()); // TRB 2
+        ring.enqueue(&dummy_trb()); // TRB 3
+
+        assert_trb_written(&ram, 0x10, true);
+        assert_trb_written(&ram, 0x10 + 16, true);
+        assert_trb_written(&ram, 0x10 + 32, true);
+
+        ring.update_dequeue_pointer(0x10 + 32);
+
+        ring.enqueue(&dummy_trb()); // TRB 4 and wraparound
+        assert_trb_written(&ram, 0x10 + 48, true);
+
+        ring.enqueue(&dummy_trb()); // TRB 5
+        assert_trb_written(&ram, 0x10, false);
+    }
+
+    #[test]
+    #[should_panic(expected = "Event Ring is full")]
+    fn event_ring_panics_on_wraparound_mid_segment_full() {
+        let (_ram, mut ring) = init_ram_and_ring();
+
+        ring.enqueue(&dummy_trb()); // TRB 1
+        ring.enqueue(&dummy_trb()); // TRB 2
+        ring.enqueue(&dummy_trb()); // TRB 3
+
+        ring.update_dequeue_pointer(0x10 + 32);
+
+        ring.enqueue(&dummy_trb()); // TRB 4 and wraparound
+        ring.enqueue(&dummy_trb()); // TRB 5
+
+        // ring is full now, the new TRB could not be written
+        // and test should panic
+        ring.enqueue(&dummy_trb());
     }
 
     #[test]
