@@ -270,7 +270,7 @@ mod tests {
         memfd.seek(std::io::SeekFrom::Start(0x1010))?;
         memfd.read_exact(&mut check_data)?;
 
-        assert_eq!(data, check_data);
+        assert_eq!(check_data, data);
 
         Ok(())
     }
