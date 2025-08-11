@@ -307,9 +307,9 @@ mod tests {
         let mut device_slot_manager = DeviceSlotManager::new(1, Arc::new(DummyMemory::default()));
 
         // reserve the only slot
-        assert_eq!(Some(1), device_slot_manager.reserve_slot());
+        assert_eq!(device_slot_manager.reserve_slot(), Some(1));
 
         // reserving another slot should fail
-        assert_eq!(None, device_slot_manager.reserve_slot());
+        assert_eq!(device_slot_manager.reserve_slot(), None);
     }
 }
