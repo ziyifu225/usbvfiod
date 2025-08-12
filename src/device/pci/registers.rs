@@ -48,33 +48,33 @@ mod tests {
     #[test]
     fn portsc_read_write() {
         let mut reg = PortscRegister::new(0x00260203);
-        assert_eq!(0x00260203, reg.read());
+        assert_eq!(reg.read(), 0x00260203);
 
         reg.write(0x0);
         assert_eq!(
-            0x00260203,
             reg.read(),
+            0x00260203,
             "writing 0 should affect neither the read-only nor the RW1C bits."
         );
 
         reg.write(0x00200000);
         assert_eq!(
-            0x00060203,
             reg.read(),
+            0x00060203,
             "writing 1 to bit 21 should clear the bit."
         );
 
         reg.write(0x00040000);
         assert_eq!(
-            0x00020203,
             reg.read(),
+            0x00020203,
             "writing 1 to bit 18 should clear the bit."
         );
 
         reg.write(0x00020000);
         assert_eq!(
-            0x00000203,
             reg.read(),
+            0x00000203,
             "writing 1 to bit 17 should clear the bit."
         );
     }

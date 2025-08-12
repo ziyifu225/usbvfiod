@@ -821,8 +821,7 @@ mod tests {
             length: 0x7788,
             data: Some(0x1122334455667788),
         }));
-        let actual = transfer_ring.next_request();
-        assert_eq!(expected, actual);
+        assert_eq!(transfer_ring.next_request(), expected);
 
         // no new command placed, should return no new command
         let request = transfer_ring.next_request();
@@ -859,8 +858,7 @@ mod tests {
             length: 0x7788,
             data: None,
         }));
-        let actual = transfer_ring.next_request();
-        assert_eq!(expected, actual);
+        assert_eq!(transfer_ring.next_request(), expected);
 
         // no new command placed, should return no new command
         let request = transfer_ring.next_request();
