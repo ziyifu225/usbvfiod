@@ -674,7 +674,7 @@ pub mod testutils {
     use super::*;
     use std::sync::Mutex;
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     pub struct TestBusDevice {
         data: Mutex<Vec<u8>>,
     }
