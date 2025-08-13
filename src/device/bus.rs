@@ -712,7 +712,16 @@ pub mod testutils {
                     self.read_bulk(req.addr, &mut bytes);
                     u32::from_le_bytes(bytes) as u64
                 }
-                _ => panic!("Only supporting 4-byte and 8-byte reads"),
+                RequestSize::Size2 => {
+                    let mut bytes = [0u8; 2];
+                    self.read_bulk(req.addr, &mut bytes);
+                    u16::from_le_bytes(bytes) as u64
+                }
+                RequestSize::Size1 => {
+                    let mut bytes = [0u8; 1];
+                    self.read_bulk(req.addr, &mut bytes);
+                    bytes[0] as u64
+                }
             }
         }
 

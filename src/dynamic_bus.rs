@@ -70,31 +70,15 @@ impl BusDevice for DynamicBus {
 
 #[cfg(test)]
 mod tests {
+    use crate::device::bus::testutils::TestBusDevice;
     use crate::device::bus::RequestSize;
 
     use super::*;
 
-    #[derive(Debug, Default)]
-    struct TestDevice {}
-
-    impl BusDevice for TestDevice {
-        fn size(&self) -> u64 {
-            0x1000
-        }
-
-        fn read(&self, _req: Request) -> u64 {
-            42
-        }
-
-        fn write(&self, _req: Request, _value: u64) {
-            // Ignore
-        }
-    }
-
     #[test]
     fn can_add_devices() {
         let bus = DynamicBus::default();
-        let device1 = Arc::new(TestDevice::default());
+        let device1 = Arc::new(TestBusDevice::new(&[42u8; 0x1000]));
 
         assert_eq!(bus.read(Request::new(0x1000, RequestSize::Size1)), 0xFF);
 
