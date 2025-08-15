@@ -670,6 +670,81 @@ impl BusDevice for Bus {
 }
 
 #[cfg(test)]
+pub mod testutils {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Debug, Default)]
+    pub struct TestBusDevice {
+        data: Mutex<Vec<u8>>,
+    }
+
+    impl TestBusDevice {
+        pub fn new(data: &[u8]) -> Self {
+            Self {
+                data: Mutex::new(data.to_vec()),
+            }
+        }
+
+        pub fn read_bulk(&self, offset: u64, data: &mut [u8]) {
+            <Self as BusDevice>::read_bulk(self, offset, data)
+        }
+
+        pub fn write_bulk(&self, offset: u64, data: &[u8]) {
+            <Self as BusDevice>::write_bulk(self, offset, data)
+        }
+    }
+
+    impl BusDevice for TestBusDevice {
+        fn size(&self) -> u64 {
+            self.data.lock().unwrap().len().try_into().unwrap()
+        }
+
+        fn read(&self, req: Request) -> u64 {
+            match req.size {
+                RequestSize::Size8 => {
+                    let mut bytes = [0; 8];
+                    self.read_bulk(req.addr, &mut bytes);
+                    u64::from_le_bytes(bytes)
+                }
+                RequestSize::Size4 => {
+                    let mut bytes = [0; 4];
+                    self.read_bulk(req.addr, &mut bytes);
+                    u32::from_le_bytes(bytes) as u64
+                }
+                RequestSize::Size2 => {
+                    let mut bytes = [0u8; 2];
+                    self.read_bulk(req.addr, &mut bytes);
+                    u16::from_le_bytes(bytes) as u64
+                }
+                RequestSize::Size1 => {
+                    let mut bytes = [0u8; 1];
+                    self.read_bulk(req.addr, &mut bytes);
+                    bytes[0] as u64
+                }
+            }
+        }
+
+        fn write(&self, req: Request, value: u64) {
+            if req.size != RequestSize::Size8 {
+                panic!("Only supporting 8-byte writes");
+            }
+            self.write_bulk(req.addr, &value.to_le_bytes());
+        }
+
+        fn read_bulk(&self, offset: u64, data: &mut [u8]) {
+            let offset: usize = offset.try_into().unwrap();
+            data.copy_from_slice(&self.data.lock().unwrap()[offset..(offset + data.len())])
+        }
+
+        fn write_bulk(&self, offset: u64, data: &[u8]) {
+            let offset: usize = offset.try_into().unwrap();
+            self.data.lock().unwrap()[offset..(offset + data.len())].copy_from_slice(data)
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::sync::{
         atomic::{AtomicU64, Ordering::SeqCst},

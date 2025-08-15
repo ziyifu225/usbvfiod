@@ -281,30 +281,15 @@ mod tests {
 
     use std::sync::Arc;
 
-    use crate::device::bus::BusDevice;
+    use crate::device::bus::testutils::TestBusDevice;
 
     use super::*;
-
-    #[derive(Debug, Default)]
-    struct DummyMemory {}
-
-    impl BusDevice for DummyMemory {
-        fn size(&self) -> u64 {
-            0
-        }
-
-        fn read(&self, _: crate::device::bus::Request) -> u64 {
-            0
-        }
-
-        fn write(&self, _: crate::device::bus::Request, _: u64) {}
-    }
 
     #[test]
     fn device_slot_reservation() {
         // we test with only one device slot, because that case is currently
         // what we run with
-        let mut device_slot_manager = DeviceSlotManager::new(1, Arc::new(DummyMemory::default()));
+        let mut device_slot_manager = DeviceSlotManager::new(1, Arc::new(TestBusDevice::default()));
 
         // reserve the only slot
         assert_eq!(device_slot_manager.reserve_slot(), Some(1));

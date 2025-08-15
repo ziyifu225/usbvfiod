@@ -650,66 +650,13 @@ pub enum RequestParseError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use crate::device::bus::BusDevice;
+    use crate::device::bus::testutils::TestBusDevice;
     use crate::device::pci::trb::CompletionCode;
+    use std::sync::Arc;
 
     use super::*;
 
-    #[derive(Debug)]
-    struct TestingRamDevice {
-        data: Mutex<Vec<u8>>,
-    }
-
-    impl TestingRamDevice {
-        fn new(data: &[u8]) -> Self {
-            Self {
-                data: Mutex::new(data.to_vec()),
-            }
-        }
-    }
-
-    impl BusDevice for TestingRamDevice {
-        fn size(&self) -> u64 {
-            self.data.lock().unwrap().len().try_into().unwrap()
-        }
-
-        fn read(&self, req: Request) -> u64 {
-            match req.size {
-                RequestSize::Size8 => {
-                    let mut bytes = [0; 8];
-                    self.read_bulk(req.addr, &mut bytes);
-                    u64::from_le_bytes(bytes)
-                }
-                RequestSize::Size4 => {
-                    let mut bytes = [0; 4];
-                    self.read_bulk(req.addr, &mut bytes);
-                    u32::from_le_bytes(bytes) as u64
-                }
-                _ => panic!("Only supporting 4-byte and 8-byte reads"),
-            }
-        }
-
-        fn write(&self, req: Request, value: u64) {
-            if req.size != RequestSize::Size8 {
-                panic!("Only supporting 8-byte writes");
-            }
-            self.write_bulk(req.addr, &value.to_le_bytes());
-        }
-
-        fn read_bulk(&self, offset: u64, data: &mut [u8]) {
-            let offset: usize = offset.try_into().unwrap();
-            data.copy_from_slice(&self.data.lock().unwrap()[offset..(offset + data.len())])
-        }
-
-        fn write_bulk(&self, offset: u64, data: &[u8]) {
-            let offset: usize = offset.try_into().unwrap();
-            self.data.lock().unwrap()[offset..(offset + data.len())].copy_from_slice(data)
-        }
-    }
-
-    fn init_ram_and_ring() -> (Arc<TestingRamDevice>, EventRing) {
+    fn init_ram_and_ring() -> (Arc<TestBusDevice>, EventRing) {
         let erste = [
             // segment_base = 0x10
             // trb_count = 4
@@ -717,7 +664,7 @@ mod tests {
             0x00, 0x00,
         ];
 
-        let ram = Arc::new(TestingRamDevice::new(&[0; 0x50]));
+        let ram = Arc::new(TestBusDevice::new(&[0; 0x50]));
         ram.write_bulk(0x0, &erste);
         let mut ring = EventRing::new(ram.clone());
         ring.configure(0x0);
@@ -737,7 +684,7 @@ mod tests {
         )
     }
 
-    fn assert_trb_written(ram: &TestingRamDevice, addr: u64, cycle_state: bool) {
+    fn assert_trb_written(ram: &TestBusDevice, addr: u64, cycle_state: bool) {
         let mut buf = [0u8; 16];
         ram.read_bulk(addr, &mut buf);
         let cycle_bit = buf[12] & 0x1 != 0;
@@ -798,7 +745,7 @@ mod tests {
         ];
 
         // construct memory segment for a ring that can contain 4 TRBs
-        let ram = Arc::new(TestingRamDevice::new(&[0; 16 * 4]));
+        let ram = Arc::new(TestBusDevice::new(&[0; 16 * 4]));
         let mut command_ring = CommandRing::new(ram.clone());
         command_ring.control(0x1);
 
@@ -917,7 +864,7 @@ mod tests {
         ];
 
         // construct memory segment for a ring that can contain 5 TRBs and an endpoint context
-        let ram = Arc::new(TestingRamDevice::new(&[0; TRB_SIZE * 5 + 32]));
+        let ram = Arc::new(TestBusDevice::new(&[0; TRB_SIZE * 5 + 32]));
         let offset_ep_context = TRB_SIZE as u64 * 5;
         // setup dequeue pointer and cycle state in the endpoint context
         // (dequeue pointer is 0, thus only setting cycle bit)
