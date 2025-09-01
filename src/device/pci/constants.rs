@@ -217,6 +217,13 @@ pub mod xhci {
     pub const MAX_INTRS: u64 = 1;
     /// Maximum number of supported device slots.
     pub const MAX_SLOTS: u64 = 1;
+    /// Maximum Event Ring Segment Table size as an exponent.
+    ///
+    /// The actual maximum number of segments is 2^MAX_ERST_SIZE_EXP.
+    /// This value is encoded in the HCSPARAMS2 register to inform
+    /// the driver about the Event Ring capabilities.
+    /// Current value allows up to 2^15 = 32768 segments.
+    pub const MAX_ERST_SIZE_EXP: u64 = 15;
 
     /// Offsets of various fields from the start of the XHCI MMIO region.
     pub mod offset {
@@ -276,6 +283,7 @@ pub mod xhci {
         pub const HCIVERSION: u64 = 0x100;
         pub const HCSPARAMS1: u64 =
             (super::MAX_PORTS << 24) | (super::MAX_INTRS << 8) | super::MAX_SLOTS;
+        pub const HCSPARAMS2: u64 = super::MAX_ERST_SIZE_EXP << 4;
         pub const HCCPARAMS1: u64 = super::offset::SUPPORTED_PROTOCOLS << 14;
 
         pub mod supported_protocols {

@@ -184,6 +184,11 @@ impl EventRing {
         self.dequeue_pointer
     }
 
+    /// Handle reads to the Event Ring Segment Table Size (ERSTSZ).
+    pub const fn read_erst_size(&self) -> u64 {
+        self.erst_size as u64
+    }
+
     /// Enqueue a new Event TRB into the Ring.
     ///
     /// # Parameters
