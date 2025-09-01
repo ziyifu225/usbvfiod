@@ -119,7 +119,12 @@ impl BusDevice for MemorySegment {
     }
 
     fn read(&self, req: Request) -> u64 {
-        assert!(req.addr.checked_add(req.size.into()).unwrap() <= self.size);
+        assert!(
+            req.addr
+                .checked_add(req.size.into())
+                .is_some_and(|end| end <= self.size),
+            "address overflow or out of bounds"
+        );
 
         // SAFETY: We check whether the request fits into the memory region above.
         let ptr = unsafe { self.mapping.as_ptr().add(req.addr.try_into().unwrap()) };
@@ -158,7 +163,12 @@ impl BusDevice for MemorySegment {
     }
 
     fn write(&self, req: Request, value: u64) {
-        assert!(req.addr.checked_add(req.size.into()).unwrap() <= self.size);
+        assert!(
+            req.addr
+                .checked_add(req.size.into())
+                .is_some_and(|end| end <= self.size),
+            "address overflow or out of bounds"
+        );
 
         if !self.mapping.is_writable() {
             return;
