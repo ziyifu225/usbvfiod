@@ -279,11 +279,17 @@ impl<const SIZE: usize> RegisterSet<SIZE> {
     ///
     /// This is typically used by the device emulation logic itself to update
     /// read-only or W1C registers.
+    ///
+    /// # Panics
+    /// Panics if `req.addr` cannot fit in `usize` or is outside the bounds `[0, SIZE)`.
     #[allow(unused)]
     pub fn write_direct(&mut self, req: Request, val: u64) {
         let le_bytes = val.to_le_bytes();
 
         for (req, &byte) in req.iter_bytes().zip(&le_bytes) {
+            // This unwrap assumes req.addr fits in usize and is within [0, SIZE).
+            // Checked bus.rs: Request.addr is defined as plain u64 with no constraints.
+            // No bounds checking before array access - caller responsibility like array[index].
             let off: usize = req.addr.try_into().unwrap();
 
             self.data[off] = byte;
@@ -322,6 +328,10 @@ impl<const SIZE: usize> RegisterSet<SIZE> {
     #[must_use]
     pub fn read(&self, req: Request) -> u64 {
         fold_iter_le(req.iter_bytes().map(|r| -> u8 {
+            // TODO: This unwrap assumes r.addr fits in usize and is within [0, SIZE).
+            // iter_bytes() splits req into individual byte requests but doesn't validate addresses.
+            // Checked bus.rs: Request.addr is plain u64. Each r.addr could overflow platform
+            // conversion or exceed array bounds, especially with large initial req.addr.
             let off: usize = r.addr.try_into().unwrap();
             self.data[off]
         }))
@@ -338,6 +348,8 @@ impl<const SIZE: usize> SingleThreadedBusDevice for RegisterSet<SIZE> {
         let le_bytes = val.to_le_bytes();
 
         for (req, &byte) in req.iter_bytes().zip(&le_bytes) {
+            // This unwrap assumes req.addr fits in usize and is within [0, SIZE).
+            // Same bounds checking issue as write_direct() above - caller responsibility.
             let off: usize = req.addr.try_into().unwrap();
 
             // Set writable bits to zero.
