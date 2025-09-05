@@ -133,7 +133,7 @@ impl EventRing {
 
         self.base_address = erstba;
         self.enqueue_pointer = self.dma_bus.read(Request::new(
-            erstba.wrapping_add(BASE_ADDR),
+            erstba.wrapping_add(SEGMENT_BASE),
             RequestSize::Size8,
         ));
         self.trb_count = self
@@ -243,7 +243,7 @@ impl EventRing {
 
             let entry_addr = self.base_address.wrapping_add((next_seg as u64) * 16);
             let next_seg_pointer = self.dma_bus.read(Request::new(
-                entry_addr.wrapping_add(BASE_ADDR),
+                entry_addr.wrapping_add(SEGMENT_BASE),
                 RequestSize::Size8,
             ));
 
@@ -269,7 +269,7 @@ impl EventRing {
             .base_address
             .wrapping_add((self.erst_count as u64) * 16);
         self.enqueue_pointer = self.dma_bus.read(Request::new(
-            entry_addr.wrapping_add(BASE_ADDR),
+            entry_addr.wrapping_add(SEGMENT_BASE),
             RequestSize::Size8,
         ));
         self.trb_count = self.dma_bus.read(Request::new(

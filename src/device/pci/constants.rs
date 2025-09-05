@@ -397,7 +397,7 @@ pub mod xhci {
         pub mod event_ring {
             /// The offsets to fields in Event Ring Segment Table Entries (ERSTE)
             pub mod segments_table_entry_offsets {
-                pub const BASE_ADDR: u64 = 0;
+                pub const SEGMENT_BASE: u64 = 0;
                 pub const SIZE: u64 = 8;
             }
         }
