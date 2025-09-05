@@ -33,10 +33,8 @@ impl TryFrom<DmaMapFlags> for AccessRights {
         let readable = value.contains(DmaMapFlags::READ);
         let writable = value.contains(DmaMapFlags::WRITE);
 
-        // Due to missing Eq and Copy traits, checking whether there are any
-        // unknown bits set is a bit convoluted.
-        if !(value.bits() & !(DmaMapFlags::READ_WRITE.bits())) != 0 {
-            warn!("Unknown DmaMapFlags set: {:0x}", value.bits());
+        if (value & !DmaMapFlags::READ_WRITE).bits() != 0 {
+            warn!("Unknown DmaMapFlags set: {:0x}", value);
         }
 
         if readable && !writable {
