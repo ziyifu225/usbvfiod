@@ -446,6 +446,7 @@ impl TrbData for LinkTrbData {
             trb_type
         );
 
+        // SAFETY: range matches array length
         let rsp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let ring_segment_pointer = u64::from_le_bytes(rsp_bytes);
         let toggle_cycle = trb_bytes[12] & 0x2 != 0;
@@ -492,6 +493,7 @@ impl TrbData for AddressDeviceCommandTrbData {
             trb_type
         );
 
+        // SAFETY: range matches array length
         let icp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let input_context_pointer = u64::from_le_bytes(icp_bytes);
 
@@ -537,6 +539,7 @@ impl TrbData for ConfigureEndpointCommandTrbData {
             trb_type
         );
 
+        // SAFETY: range matches array length
         let icp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let input_context_pointer = u64::from_le_bytes(icp_bytes);
 
@@ -672,9 +675,11 @@ impl TrbData for NormalTrbData {
             trb_type
         );
 
+        // SAFETY: range matches array length
         let dp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let data_pointer = u64::from_le_bytes(dp_bytes);
 
+        // SAFETY: range matches array length
         let tl_bytes: [u8; 2] = trb_bytes[8..10].try_into().unwrap();
         let transfer_length = u16::from_le_bytes(tl_bytes);
 
@@ -757,6 +762,7 @@ impl TrbData for DataStageTrbData {
             trb_type
         );
 
+        // SAFETY: range matches array length
         let dp_bytes: [u8; 8] = trb_bytes[0..8].try_into().unwrap();
         let data_pointer = u64::from_le_bytes(dp_bytes);
 
