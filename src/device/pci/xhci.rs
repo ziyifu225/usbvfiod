@@ -95,6 +95,7 @@ impl XhciController {
                 // TODO Should be a 64-bit BAR.
                 .mem32_nonprefetchable_bar(0, 4 * 0x1000)
                 .mem32_nonprefetchable_bar(3, 2 * 0x1000)
+                // SAFETY: XHCI MAX_INTRS constant (1) always fits in target type
                 .msix_capability(MAX_INTRS.try_into().unwrap(), 3, 0, 3, 0x1000)
                 .config_space(),
             running: false,
@@ -296,6 +297,7 @@ impl XhciController {
         }
         let device_context = self.device_slot_manager.get_device_context(data.slot_id);
         let enabled_endpoints = device_context.configure_endpoints(data.input_context_pointer);
+        // Program requires real USB device for all XHCI operations (pattern used throughout file)
         for i in enabled_endpoints {
             self.real_device.as_mut().unwrap().enable_endpoint(i);
         }
