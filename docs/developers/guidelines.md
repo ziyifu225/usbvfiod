@@ -50,7 +50,19 @@ For consistency and readability, follow this trait order when deriving multiple 
 
 #### 1. Always Safe - No Comment Required
 
-**1.1 Mutex Lock Operations**
+**1.1 Compile-time Constants**
+
+```rust
+// No safety comment needed for obvious constant conversions
+pub const MAX_INTRS: u64 = 1;
+let count: u16 = MAX_INTRS.try_into().unwrap();
+
+pub const CAPABILITIES_POINTER: usize = 0x34;
+let offset: u8 = CAPABILITIES_POINTER.try_into().unwrap();
+```
+**Rationale**: When the constant value is small and obviously fits in the target type, the conversion safety is self-evident. No comment is needed for straightforward constant conversions within the same codebase.
+
+**1.2 Mutex Lock Operations**
 
 ```rust
 // No safety comment needed
@@ -58,7 +70,7 @@ self.data.lock().unwrap()
 ```
 **Rationale**: The `lock()` operation itself filters out most error conditions before reaching `unwrap()`. Mutex poisoning only occurs when a thread panics while holding the lock, which indicates a serious program error. In such cases, propagating the panic via `unwrap()` is the correct behavior. The error handling is already done at the `lock()` level, making `unwrap()` safe in this context.
 
-**1.2 Test Code**
+**1.3 Test Code**
 ```rust
 #[cfg(test)]
 fn test_something() {

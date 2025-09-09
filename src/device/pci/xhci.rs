@@ -95,7 +95,6 @@ impl XhciController {
                 // TODO Should be a 64-bit BAR.
                 .mem32_nonprefetchable_bar(0, 4 * 0x1000)
                 .mem32_nonprefetchable_bar(3, 2 * 0x1000)
-                // SAFETY: XHCI MAX_INTRS constant (1) always fits in target type
                 .msix_capability(MAX_INTRS.try_into().unwrap(), 3, 0, 3, 0x1000)
                 .config_space(),
             running: false,
