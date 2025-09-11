@@ -70,8 +70,11 @@ pub struct XhciController {
     /// The interrupt line triggered to signal device events.
     interrupt_line: Arc<dyn InterruptLine>,
 
-    /// State of the PORTSC register
-    portsc: PortscRegister,
+    /// State of the USB3 PORTSC register
+    portsc_usb3: PortscRegister,
+
+    /// State of the USB2 PORTSC register
+    portsc_usb2: PortscRegister,
 }
 
 impl XhciController {
@@ -104,9 +107,10 @@ impl XhciController {
             interrupt_management: 0,
             interrupt_moderation_interval: runtime::IMOD_DEFAULT,
             interrupt_line: Arc::new(DummyInterruptLine::default()),
-            portsc: PortscRegister::new(
+            portsc_usb3: PortscRegister::new(
                 portsc::CCS | portsc::PED | portsc::PP | portsc::CSC | portsc::PEC | portsc::PRC,
             ),
+            portsc_usb2: PortscRegister::new(portsc::PP),
         }
     }
 
@@ -453,7 +457,8 @@ impl PciDevice for Mutex<XhciController> {
             offset::CONFIG => self.lock().unwrap().enable_slots(value),
             // USBSTS writes occur but we can ignore them (to get a device enumerated)
             offset::USBSTS => {}
-            offset::PORTSC => self.lock().unwrap().portsc.write(value),
+            offset::PORTSC_USB3 => self.lock().unwrap().portsc_usb3.write(value),
+            offset::PORTSC_USB2 => self.lock().unwrap().portsc_usb2.write(value),
 
             // xHC Runtime Registers
             offset::IMAN => self.lock().unwrap().interrupt_management = value,
@@ -497,6 +502,8 @@ impl PciDevice for Mutex<XhciController> {
             // xHC Extended Capability ("Supported Protocols Capability")
             offset::SUPPORTED_PROTOCOLS => capability::supported_protocols::CAP_INFO,
             offset::SUPPORTED_PROTOCOLS_CONFIG => capability::supported_protocols::CONFIG,
+            offset::SUPPORTED_PROTOCOLS_USB2 => capability::supported_protocols_usb2::CAP_INFO,
+            offset::SUPPORTED_PROTOCOLS_USB2_CONFIG => capability::supported_protocols_usb2::CONFIG,
 
             // xHC Operational Registers
             offset::USBCMD => 0,
@@ -509,8 +516,10 @@ impl PciDevice for Mutex<XhciController> {
             offset::PAGESIZE => 0x1, /* 4k Pages */
             offset::CONFIG => self.lock().unwrap().config(),
 
-            offset::PORTSC => self.lock().unwrap().portsc.read(),
-            offset::PORTLI => 0,
+            offset::PORTSC_USB3 => self.lock().unwrap().portsc_usb3.read(),
+            offset::PORTLI_USB3 => 0,
+            offset::PORTSC_USB2 => self.lock().unwrap().portsc_usb2.read(),
+            offset::PORTLI_USB2 => 0,
 
             // xHC Runtime Registers
             offset::IMAN => self.lock().unwrap().interrupt_management,
