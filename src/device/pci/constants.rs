@@ -211,8 +211,12 @@ pub mod xhci {
     pub const OP_BASE: u64 = 0x40;
     /// Runtime register base offset.
     pub const RUN_BASE: u64 = 0x3000;
+    /// Number of USB 3 ports that we use
+    pub const NUM_USB3_PORTS: u64 = 1;
+    /// Number of USB 2 ports that we use
+    pub const NUM_USB2_PORTS: u64 = 1;
     /// Maximum number of supported ports.
-    pub const MAX_PORTS: u64 = 1;
+    pub const MAX_PORTS: u64 = NUM_USB3_PORTS + NUM_USB2_PORTS;
     /// Maximum number of supported interrupter register sets.
     pub const MAX_INTRS: u64 = 1;
     /// Maximum number of supported device slots.
@@ -241,6 +245,8 @@ pub mod xhci {
         /// Extended Capabilities
         pub const SUPPORTED_PROTOCOLS: u64 = 0x20;
         pub const SUPPORTED_PROTOCOLS_CONFIG: u64 = 0x28;
+        pub const SUPPORTED_PROTOCOLS_USB2: u64 = 0x30;
+        pub const SUPPORTED_PROTOCOLS_USB2_CONFIG: u64 = 0x38;
 
         /// Operational Register Offsets
         pub const USBCMD: u64 = super::OP_BASE;
@@ -254,9 +260,12 @@ pub mod xhci {
         pub const CONFIG: u64 = super::OP_BASE + 0x38;
 
         /// Per Port Operational Register Offsets
-        pub const PORTSC: u64 = super::OP_BASE + 0x400; /* +(0x10 * (portnr-1)) */
-        pub const PORTPMSC: u64 = super::OP_BASE + 0x404;
-        pub const PORTLI: u64 = super::OP_BASE + 0x408;
+        pub const PORTSC_USB3: u64 = super::OP_BASE + 0x400; /* +(0x10 * (portnr-1)) */
+        pub const PORTPMSC_USB3: u64 = super::OP_BASE + 0x404;
+        pub const PORTLI_USB3: u64 = super::OP_BASE + 0x408;
+        pub const PORTSC_USB2: u64 = super::OP_BASE + 0x410;
+        pub const PORTPMSC_USB2: u64 = super::OP_BASE + 0x414;
+        pub const PORTLI_USB2: u64 = super::OP_BASE + 0x418;
 
         /// Runtime Register Offsets
         pub const MFINDEX: u64 = super::RUN_BASE;
@@ -290,9 +299,21 @@ pub mod xhci {
             const ID: u64 = 2;
             const MAJOR: u64 = 0x03;
             const MINOR: u64 = 0x20;
+            const NEXT: u64 = (super::super::offset::SUPPORTED_PROTOCOLS_USB2
+                - super::super::offset::SUPPORTED_PROTOCOLS)
+                >> 2;
+            pub const CAP_INFO: u64 = ID | (MAJOR << 24) | (MINOR << 16) | (NEXT << 8);
+            pub const CONFIG: u64 = 1 | (super::super::NUM_USB3_PORTS << 8);
+        }
+
+        pub mod supported_protocols_usb2 {
+            const ID: u64 = 2;
+            const MAJOR: u64 = 0x02;
+            const MINOR: u64 = 0x00;
             const NEXT: u64 = 0;
             pub const CAP_INFO: u64 = ID | (MAJOR << 24) | (MINOR << 16) | (NEXT << 8);
-            pub const CONFIG: u64 = 1 | (super::super::MAX_PORTS << 8);
+            pub const CONFIG: u64 =
+                (super::super::NUM_USB3_PORTS + 1) | (super::super::NUM_USB2_PORTS << 8);
         }
     }
 
