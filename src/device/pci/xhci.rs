@@ -296,6 +296,7 @@ impl XhciController {
         }
         let device_context = self.device_slot_manager.get_device_context(data.slot_id);
         let enabled_endpoints = device_context.configure_endpoints(data.input_context_pointer);
+        // Program requires real USB device for all XHCI operations (pattern used throughout file)
         for i in enabled_endpoints {
             self.real_device.as_mut().unwrap().enable_endpoint(i);
         }
@@ -377,6 +378,10 @@ impl XhciController {
             .get_device_context(slot)
             .get_transfer_ring(ep as u64);
 
+        // TODO: Implement same behavior for `check_in_endpoint`.
+        // We assume that OUT doorbell should guarantee TRB availability.
+        // panic if OUT transfer ring is empty, so that we will notice any violation
+        // of our assumption.
         let trb = transfer_ring.next_transfer_trb().unwrap();
         debug!("TRB on endpoint {} (OUT): {:?}", ep, trb);
         let (completion_code, residual_bytes) = self

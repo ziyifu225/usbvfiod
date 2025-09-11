@@ -97,7 +97,6 @@ impl<const SIZE_BYTES: usize> MsixTable<SIZE_BYTES> {
                 field_read(offset::MESSAGE_ADDRESS, RequestSize::Size8),
                 field_read(offset::MESSAGE_DATA, RequestSize::Size2)
                     .try_into()
-                    // This unwrap is safe, because we explicitly read a 16-bit value.
                     .unwrap(),
             )
         })

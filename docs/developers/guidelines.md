@@ -41,3 +41,80 @@ For consistency and readability, follow this trait order when deriving multiple 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 ```
+
+## `unwrap()` Safety Explanations
+
+`unwrap()` should only be used when the operation is guaranteed to succeed based on program logic, mathematical invariants, or architectural contracts. Every unwrap() must be justified with a safety comment or fall into a well-established safe category.
+
+### Categories of Unwrap Usage
+
+#### 1. Always Safe - No Comment Required
+
+**1.1 Compile-time Constants**
+
+```rust
+// No safety comment needed for obvious constant conversions
+pub const MAX_INTRS: u64 = 1;
+let count: u16 = MAX_INTRS.try_into().unwrap();
+
+pub const CAPABILITIES_POINTER: usize = 0x34;
+let offset: u8 = CAPABILITIES_POINTER.try_into().unwrap();
+```
+**Rationale**: When the constant value is small and obviously fits in the target type, the conversion safety is self-evident. No comment is needed for straightforward constant conversions within the same codebase.
+
+**1.2 Mutex Lock Operations**
+
+```rust
+// No safety comment needed
+self.data.lock().unwrap()
+```
+**Rationale**: The `lock()` operation itself filters out most error conditions before reaching `unwrap()`. Mutex poisoning only occurs when a thread panics while holding the lock, which indicates a serious program error. In such cases, propagating the panic via `unwrap()` is the correct behavior. The error handling is already done at the `lock()` level, making `unwrap()` safe in this context.
+
+**1.3 Test Code**
+```rust
+#[cfg(test)]
+fn test_something() {
+    let result = some_operation().unwrap(); // OK in tests
+}
+```
+**Rationale**: In test environments, process crashes are acceptable and even desirable for debugging. Test failures should be immediate and obvious. Therefore `unwrap()` is an appropriate choice for its simplicity and clear failure indication.
+
+#### 2. Safe with Required Comments
+
+When `unwrap()` is safe but not obviously so, add a SAFETY comment explaining why:
+
+```rust
+// SAFETY: usize always fits in u64 on all supported platforms
+let size_u64: u64 = array.len().try_into().unwrap();
+
+// SAFETY: cur_offset >= request_start is guaranteed by assertion above
+let data_offset: usize = (self.cur_offset - self.request_start).try_into().unwrap();
+
+// SAFETY: All RequestSize variants are non-zero
+Self::new(r as u64).unwrap()
+```
+
+#### 3. Avoid These Cases
+
+```rust
+// BAD: u64 may not fit in usize on 32-bit systems
+let offset: usize = addr.try_into().unwrap();
+
+// BAD: External data can be invalid
+let value = user_input.parse::<u32>().unwrap();
+let file_content = std::fs::read_to_string(path).unwrap();
+```
+
+**Instead**: Use bounds checking or proper error handling.
+
+#### 4. Cases Requiring Future Work
+
+When `unwrap()` needs attention, mark with TODO:
+
+```rust
+// TODO: This unwrap assumes req.addr fits in usize and is within bounds.
+// Need to add proper bounds checking and error handling
+let off: usize = req.addr.try_into().unwrap();
+```
+
+Use `TODO` comments to mark `unwrap()` calls that need future work, whether for missing error handling implementation or architectural clarification.
