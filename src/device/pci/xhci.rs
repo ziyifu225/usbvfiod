@@ -378,29 +378,26 @@ impl XhciController {
             .get_device_context(slot)
             .get_transfer_ring(ep as u64);
 
-        // TODO: Implement same behavior for `check_in_endpoint`.
-        // We assume that OUT doorbell should guarantee TRB availability.
-        // panic if OUT transfer ring is empty, so that we will notice any violation
-        // of our assumption.
-        let trb = transfer_ring.next_transfer_trb().unwrap();
-        debug!("TRB on endpoint {} (OUT): {:?}", ep, trb);
-        let (completion_code, residual_bytes) = self
-            .real_device
-            .as_mut()
-            .unwrap()
-            .transfer_out(&trb, &self.dma_bus);
-        // send transfer event
-        let trb = EventTrb::new_transfer_event_trb(
-            trb.address,
-            residual_bytes,
-            completion_code,
-            false,
-            ep,
-            slot,
-        );
-        self.event_ring.enqueue(&trb);
-        self.interrupt_line.interrupt();
-        debug!("sent Transfer Event and signaled interrupt");
+        while let Some(trb) = transfer_ring.next_transfer_trb() {
+            debug!("TRB on endpoint {} (OUT): {:?}", ep, trb);
+            let (completion_code, residual_bytes) = self
+                .real_device
+                .as_mut()
+                .unwrap()
+                .transfer_out(&trb, &self.dma_bus);
+            // send transfer event
+            let trb = EventTrb::new_transfer_event_trb(
+                trb.address,
+                residual_bytes,
+                completion_code,
+                false,
+                ep,
+                slot,
+            );
+            self.event_ring.enqueue(&trb);
+            self.interrupt_line.interrupt();
+            debug!("sent Transfer Event and signaled interrupt");
+        }
     }
 
     fn check_in_endpoint(&mut self, slot: u8, ep: u8) {
