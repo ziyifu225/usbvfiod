@@ -388,7 +388,7 @@ impl XhciController {
                 .real_device
                 .as_mut()
                 .unwrap()
-                .transfer_out(&trb, &self.dma_bus);
+                .transfer_out(ep, &trb, &self.dma_bus);
             // send transfer event
             let trb = EventTrb::new_transfer_event_trb(
                 trb.address,
@@ -412,11 +412,11 @@ impl XhciController {
 
         while let Some(trb) = transfer_ring.next_transfer_trb() {
             debug!("TRB on endpoint {} (IN): {:?}", ep, trb);
-            let (completion_code, residual_bytes) = self
-                .real_device
-                .as_mut()
-                .unwrap()
-                .transfer_in(&trb, &self.dma_bus);
+            let (completion_code, residual_bytes) =
+                self.real_device
+                    .as_mut()
+                    .unwrap()
+                    .transfer_in(ep, &trb, &self.dma_bus);
             // send transfer event
             let transfer_event = EventTrb::new_transfer_event_trb(
                 trb.address,
