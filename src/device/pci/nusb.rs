@@ -14,11 +14,15 @@ use std::{
     time::Duration,
 };
 
+enum EndpointWrapper {
+    BulkIn(nusb::Endpoint<Bulk, In>),
+    BulkOut(nusb::Endpoint<Bulk, Out>),
+}
+
 pub struct NusbDeviceWrapper {
     device: nusb::Device,
     interface: nusb::Interface,
-    ep_in: Option<nusb::Endpoint<Bulk, In>>,
-    ep_out: Option<nusb::Endpoint<Bulk, Out>>,
+    endpoints: [Option<EndpointWrapper>; 30],
 }
 
 impl Debug for NusbDeviceWrapper {
@@ -38,8 +42,7 @@ impl NusbDeviceWrapper {
         Self {
             device,
             interface,
-            ep_in: None,
-            ep_out: None,
+            endpoints: std::array::from_fn(|_| None),
         }
     }
 
@@ -113,15 +116,23 @@ impl RealDevice for NusbDeviceWrapper {
         }
     }
 
-    fn transfer_out(&mut self, trb: &TransferTrb, dma_bus: &BusDeviceRef) -> (CompletionCode, u32) {
+    fn transfer_out(
+        &mut self,
+        endpoint_id: u8,
+        trb: &TransferTrb,
+        dma_bus: &BusDeviceRef,
+    ) -> (CompletionCode, u32) {
         assert!(
             matches!(trb.variant, TransferTrbVariant::Normal(_)),
             "Expected Normal TRB but got {:?}",
             trb
         );
 
-        // transfer_out requires endpoint 4 to be enabled, panic if not
-        let ep_out = self.ep_out.as_mut().unwrap();
+        let ep_out = match self.endpoints[endpoint_id as usize - 2].as_mut() {
+            Some(EndpointWrapper::BulkOut(ep)) => ep,
+            None => panic!("transfer_in for uninitialized endpoint (EP{})", endpoint_id),
+            _ => unreachable!(),
+        };
         // SAFETY: assert above guarantees TRB is Normal variant
         let normal_data = extract_normal_trb_data(trb).unwrap();
 
@@ -134,14 +145,24 @@ impl RealDevice for NusbDeviceWrapper {
         (CompletionCode::Success, 0)
     }
 
-    fn transfer_in(&mut self, trb: &TransferTrb, dma_bus: &BusDeviceRef) -> (CompletionCode, u32) {
+    fn transfer_in(
+        &mut self,
+        endpoint_id: u8,
+        trb: &TransferTrb,
+        dma_bus: &BusDeviceRef,
+    ) -> (CompletionCode, u32) {
         assert!(
             matches!(trb.variant, TransferTrbVariant::Normal(_)),
             "Expected Normal TRB but got {:?}",
             trb
         );
 
-        let ep_in = self.ep_in.as_mut().unwrap();
+        // transfer_in requires targeted endpoint to be enabled, panic if not
+        let ep_in = match self.endpoints[endpoint_id as usize - 2].as_mut() {
+            Some(EndpointWrapper::BulkIn(ep)) => ep,
+            None => panic!("transfer_in for uninitialized endpoint (EP{})", endpoint_id),
+            _ => unreachable!(),
+        };
         let normal_data = extract_normal_trb_data(trb).unwrap();
         let transfer_length = normal_data.transfer_length as usize;
 
@@ -190,26 +211,44 @@ impl RealDevice for NusbDeviceWrapper {
     }
 
     fn enable_endpoint(&mut self, endpoint_id: u8) {
-        match endpoint_id {
-            3 => {
-                if self.ep_in.is_some() {
-                    return;
-                }
-                // Program requires USB bulk in endpoint 0x81
-                self.ep_in = Some(self.interface.endpoint::<Bulk, In>(0x81).unwrap());
-                debug!("enabled EP3 on real device");
-            }
-            4 => {
-                if self.ep_out.is_some() {
-                    return;
-                }
-                // Program requires USB bulk out endpoint 0x2
-                self.ep_out = Some(self.interface.endpoint::<Bulk, Out>(0x2).unwrap());
-                debug!("enabled EP4 on real device");
-            }
-            1 => {}
-            _ => todo!(),
+        if endpoint_id == 1 {
+            // id of the control endpoint
+            //
+            // nusb allows us to perform control requests directly on the
+            // interface, so there is no need for us to open/track this
+            // endpoint.
+            return;
         }
+        assert!(
+            (2..=31).contains(&endpoint_id),
+            "request to enable invalid endpoint id on nusb device. endpoint_id = {}",
+            endpoint_id
+        );
+        if self.endpoints[endpoint_id as usize - 2].is_some() {
+            // endpoint is already enabled.
+            //
+            // The Linux kernel configures and directly afterwards reconfigures
+            // the endpoints (probably due to a very generic configuration
+            // implementation), triggering multiple `enable_endpoint` calls.
+            return;
+        }
+
+        let endpoint_index = endpoint_id / 2;
+        let is_out_endpoint = endpoint_id % 2 == 0;
+        let endpoint = match is_out_endpoint {
+            true => EndpointWrapper::BulkOut(
+                self.interface
+                    .endpoint::<Bulk, Out>(endpoint_index)
+                    .unwrap(),
+            ),
+            false => EndpointWrapper::BulkIn(
+                self.interface
+                    .endpoint::<Bulk, In>(0x80 | endpoint_index)
+                    .unwrap(),
+            ),
+        };
+        self.endpoints[endpoint_id as usize - 2] = Some(endpoint);
+        debug!("enabled EP{} on real device", endpoint_id);
     }
 }
 
