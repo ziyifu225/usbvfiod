@@ -7,17 +7,19 @@ virtual machines using the [vfio-user
 protocol](https://github.com/tmakatos/qemu/blob/master/docs/devel/vfio-user.rst). Other
 VMMs might also work, but but are currently not the main target.
 
-This project is still under active development and **not usable
-yet**. We are planning to work on this project in the following order:
+This project is still under active development. We are planning to work on this
+project in the following order:
 
 1. **Validating our Assumptions** (Done)
    - We are looking for suitable libraries to use and finalize our design.
-2. **Towards USB Storage Passthrough** (🚧 **Ongoing** 🚧)
+2. **Towards USB Storage Passthrough** (Done)
    - We build up a virtual XHCI controller and the necessary plumbing
      to pass-through USB devices from the host.
    - Our initial test target will be USB storage devices.
-3. **Broaden Device Support**
+3. **Broaden Device Support** (🚧 **Ongoing** 🚧)
    - We broaden the set of USB devices we support and actively test.
+   - Our current focus is enabling USB-2 devices and devices with interrupt
+     endpoints.
 
 If you want to use this code, please check back later or [get in
 touch](https://cyberus-technology.de/en/contact), if you need
@@ -96,10 +98,6 @@ Bus 002 Device 003: ID 18a5:0243 Verbatim, Ltd Flash Drive (Store'n'Go)
 So for attaching the flash drive you would add `--device
 /dev/bus/usb/002/003` as a parameter to `usbvfiod`. `usbvfiod` must
 have permission to read and write the device node.
-
-> [!NOTE]
-> Attached USB devices do not yet appear in the guest. The relevant plumbing
-> is not implemented yet.
 
 ### Format Checks
 
