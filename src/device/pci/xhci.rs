@@ -7,7 +7,7 @@ use std::sync::{
     atomic::{fence, Ordering},
     Arc, Mutex,
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::device::{
     bus::{BusDeviceRef, Request, SingleThreadedBusDevice},
@@ -107,15 +107,35 @@ impl XhciController {
             interrupt_management: 0,
             interrupt_moderation_interval: runtime::IMOD_DEFAULT,
             interrupt_line: Arc::new(DummyInterruptLine::default()),
-            portsc_usb3: PortscRegister::new(
-                portsc::CCS | portsc::PED | portsc::PP | portsc::CSC | portsc::PEC | portsc::PRC,
-            ),
+            portsc_usb3: PortscRegister::new(portsc::PP),
             portsc_usb2: PortscRegister::new(portsc::PP),
         }
     }
 
     pub fn set_device(&mut self, device: Box<dyn RealDevice>) {
-        self.real_device = Some(device);
+        if let Some(speed) = device.speed() {
+            self.real_device = Some(device);
+
+            let portsc = PortscRegister::new(
+                portsc::CCS
+                    | portsc::PED
+                    | portsc::PP
+                    | portsc::CSC
+                    | portsc::PEC
+                    | portsc::PRC
+                    | (speed as u64) << 10,
+            );
+            if speed.is_usb2_speed() {
+                self.portsc_usb2 = portsc;
+            } else {
+                self.portsc_usb3 = portsc;
+            }
+
+            info!("Attached {} device", speed);
+        } else {
+            warn!("Failed to attach device: Unable to determine speed");
+            // portsc::CCS | portsc::PED | portsc::PP | portsc::CSC | portsc::PEC | portsc::PRC,
+        }
     }
 
     /// Configure the interrupt line for the controller.
@@ -287,9 +307,6 @@ impl XhciController {
     }
 
     fn handle_address_device(&self, data: &AddressDeviceCommandTrbData) {
-        if data.block_set_address_request {
-            panic!("encountered Address Device Command with BSR set");
-        }
         let device_context = self.device_slot_manager.get_device_context(data.slot_id);
         device_context.initialize(data.input_context_pointer);
     }

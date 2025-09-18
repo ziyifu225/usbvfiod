@@ -5,6 +5,7 @@ use tracing::{debug, warn};
 use crate::device::bus::BusDeviceRef;
 use crate::device::pci::trb::CompletionCode;
 
+use super::realdevice::Speed;
 use super::trb::{NormalTrbData, TransferTrb, TransferTrbVariant};
 use super::{realdevice::RealDevice, usbrequest::UsbRequest};
 use std::cmp::Ordering::*;
@@ -107,7 +108,24 @@ impl NusbDeviceWrapper {
     }
 }
 
+impl From<nusb::Speed> for Speed {
+    fn from(value: nusb::Speed) -> Self {
+        match value {
+            nusb::Speed::Low => Self::Low,
+            nusb::Speed::Full => Self::Full,
+            nusb::Speed::High => Self::High,
+            nusb::Speed::Super => Self::Super,
+            nusb::Speed::SuperPlus => Self::SuperPlus,
+            _ => todo!("new USB speed was added to non-exhaustive enum"),
+        }
+    }
+}
+
 impl RealDevice for NusbDeviceWrapper {
+    fn speed(&self) -> Option<Speed> {
+        self.device.speed().map(|speed| speed.into())
+    }
+
     fn control_transfer(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
         let direction = request.request_type & 0x80 != 0;
         match direction {
