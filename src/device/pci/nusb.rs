@@ -108,9 +108,22 @@ impl NusbDeviceWrapper {
     }
 }
 
+impl From<nusb::Speed> for Speed {
+    fn from(value: nusb::Speed) -> Self {
+        match value {
+            nusb::Speed::Low => Self::Low,
+            nusb::Speed::Full => Self::Full,
+            nusb::Speed::High => Self::High,
+            nusb::Speed::Super => Self::Super,
+            nusb::Speed::SuperPlus => Self::SuperPlus,
+            _ => todo!("new USB speed was added to non-exhaustive enum"),
+        }
+    }
+}
+
 impl RealDevice for NusbDeviceWrapper {
     fn speed(&self) -> Option<Speed> {
-        todo!();
+        self.device.speed().map(|speed| speed.into())
     }
 
     fn control_transfer(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
