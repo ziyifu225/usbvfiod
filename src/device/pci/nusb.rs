@@ -5,6 +5,7 @@ use tracing::{debug, warn};
 use crate::device::bus::BusDeviceRef;
 use crate::device::pci::trb::CompletionCode;
 
+use super::realdevice::Speed;
 use super::trb::{NormalTrbData, TransferTrb, TransferTrbVariant};
 use super::{realdevice::RealDevice, usbrequest::UsbRequest};
 use std::cmp::Ordering::*;
@@ -108,6 +109,10 @@ impl NusbDeviceWrapper {
 }
 
 impl RealDevice for NusbDeviceWrapper {
+    fn speed(&self) -> Option<Speed> {
+        todo!();
+    }
+
     fn control_transfer(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
         let direction = request.request_type & 0x80 != 0;
         match direction {
