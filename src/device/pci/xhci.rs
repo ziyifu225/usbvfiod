@@ -307,9 +307,6 @@ impl XhciController {
     }
 
     fn handle_address_device(&self, data: &AddressDeviceCommandTrbData) {
-        if data.block_set_address_request {
-            panic!("encountered Address Device Command with BSR set");
-        }
         let device_context = self.device_slot_manager.get_device_context(data.slot_id);
         device_context.initialize(data.input_context_pointer);
     }
