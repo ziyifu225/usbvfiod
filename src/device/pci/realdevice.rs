@@ -9,8 +9,8 @@ use std::fmt::{self, Debug};
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Speed {
-    Low = 1,
-    Full = 2,
+    Full = 1,
+    Low = 2,
     High = 3,
     Super = 4,
     SuperPlus = 5,
