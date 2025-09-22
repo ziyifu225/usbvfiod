@@ -27,7 +27,7 @@ use super::{
     config_space::BarInfo,
     constants::xhci::{device_slots::endpoint_state, operational::usbsts},
     device_slots::DeviceSlotManager,
-    realdevice::RealDevice,
+    realdevice::{EndpointWorkerInfo, RealDevice},
     registers::PortscRegister,
     rings::{CommandRing, EventRing},
     trb::{
@@ -430,10 +430,18 @@ impl XhciController {
         let enabled_endpoints = device_context.configure_endpoints(data.input_context_pointer);
         // Program requires real USB device for all XHCI operations (pattern used throughout file)
         for (i, ep_type) in enabled_endpoints {
+            let worker_info = EndpointWorkerInfo {
+                slot_id: data.slot_id,
+                endpoint_id: i,
+                transfer_ring: device_context.get_transfer_ring(i as u64),
+                dma_bus: self.dma_bus.clone(),
+                event_ring: self.event_ring.clone(),
+                interrupt_line: self.interrupt_line.clone(),
+            };
             self.real_device
                 .as_mut()
                 .unwrap()
-                .enable_endpoint(i, ep_type);
+                .enable_endpoint(worker_info, ep_type);
         }
     }
 
