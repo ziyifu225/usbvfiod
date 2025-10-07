@@ -17,6 +17,8 @@ pub const fn zeroed_trb_buffer() -> RawTrbBuffer {
 }
 
 /// Represents a TRB that the XHCI controller can place on the event ring.
+///
+/// See XHCI specification Section 6.4.2 for detailed event TRB type descriptions.
 #[derive(Debug)]
 pub enum EventTrb {
     Transfer(TransferEventTrbData),
@@ -156,6 +158,7 @@ impl PortStatusChangeEventTrbData {
     }
 }
 
+/// Stores the relevant data for a Transfer Event.
 #[derive(Debug)]
 pub struct TransferEventTrbData {
     trb_pointer: u64,
@@ -216,6 +219,8 @@ impl TransferEventTrbData {
 }
 
 /// Encodes the completion code that some event TRBs contain.
+///
+/// Refer to Table 6-90 in the XHCI specification for detailed descriptions of each code.
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 pub enum CompletionCode {
@@ -340,6 +345,8 @@ pub struct CommandTrb {
 }
 
 /// Represents a TRB that the driver can place on the command ring.
+///
+/// See XHCI specification Section 6.4.3 for detailed command TRB type descriptions.
 #[derive(Debug, PartialEq, Eq)]
 pub enum CommandTrbVariant {
     EnableSlot,
@@ -419,6 +426,9 @@ impl CommandTrbVariant {
     }
 }
 
+/// Link TRB data structure.
+///
+/// See XHCI specification Section 6.4.4.1 for detailed descriptions
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkTrbData {
     /// The address of the next ring segment.
@@ -464,6 +474,9 @@ impl TrbData for LinkTrbData {
     }
 }
 
+/// Address Device Command TRB data structure.
+///
+/// See XHCI specification Section 6.4.3.4 for detailed field descriptions.
 #[derive(Debug, PartialEq, Eq)]
 pub struct AddressDeviceCommandTrbData {
     /// The address of the input context.
@@ -514,6 +527,9 @@ impl TrbData for AddressDeviceCommandTrbData {
     }
 }
 
+/// Configure Endpoint Command TRB data structure.
+///
+/// See XHCI specification Section 6.4.3.5 for detailed field descriptions.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ConfigureEndpointCommandTrbData {
     pub input_context_pointer: u64,
@@ -560,6 +576,9 @@ impl TrbData for ConfigureEndpointCommandTrbData {
     }
 }
 
+/// Stop Endpoint Command TRB data structure.
+///
+/// See XHCI specification Section 6.4.3.8 for detailed field descriptions.
 #[derive(Debug, PartialEq, Eq)]
 pub struct StopEndpointCommandTrbData {
     /// The endpoint to stop.
@@ -606,6 +625,8 @@ pub struct TransferTrb {
 }
 
 /// Represents a TRB that the driver can place on a transfer ring.
+///
+/// See XHCI specification Section 6.4.1 for detailed transfer TRB type descriptions.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TransferTrbVariant {
     Normal(NormalTrbData),
@@ -649,6 +670,10 @@ impl TransferTrbVariant {
     }
 }
 
+/// Normal TRB data structure (simplified representation).
+///
+/// This struct contains only the commonly used fields from the Normal TRB.
+/// See XHCI specification Section 6.4.1.1 for the complete TRB layout.
 #[derive(Debug, PartialEq, Eq)]
 pub struct NormalTrbData {
     pub data_pointer: u64,
@@ -695,6 +720,9 @@ impl TrbData for NormalTrbData {
     }
 }
 
+/// Setup Stage TRB data structure.
+///
+/// See XHCI specification Section 6.4.1.2.1 for detailed field descriptions.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SetupStageTrbData {
     pub request_type: u8,
@@ -738,6 +766,9 @@ impl TrbData for SetupStageTrbData {
     }
 }
 
+/// Data Stage TRB data structure.
+///
+/// See XHCI specification Section 6.4.1.2.2 for detailed field descriptions.
 #[derive(Debug, PartialEq, Eq)]
 pub struct DataStageTrbData {
     pub data_pointer: u64,
