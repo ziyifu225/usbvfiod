@@ -578,68 +578,61 @@ impl PciDevice for Mutex<XhciController> {
         // The XHCI Controller has a single MMIO BAR.
         assert_eq!(region, 0);
 
+        let mut guard = self.lock().unwrap();
         match req.addr {
             // xHC Operational Registers
-            offset::USBCMD => self.lock().unwrap().run(value),
+            offset::USBCMD => guard.run(value),
             offset::DNCTL => assert_eq!(value, 2, "debug notifications not supported"),
-            offset::CRCR => self.lock().unwrap().command_ring.control(value),
+            offset::CRCR => guard.command_ring.control(value),
             offset::CRCR_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
-            offset::DCBAAP => self.lock().unwrap().configure_device_contexts(value),
+            offset::DCBAAP => guard.configure_device_contexts(value),
             offset::DCBAAP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
-            offset::CONFIG => self.lock().unwrap().enable_slots(value),
+            offset::CONFIG => guard.enable_slots(value),
             // USBSTS writes occur but we can ignore them (to get a device enumerated)
             offset::USBSTS => {}
             // xHC Runtime Registers (moved up for performance)
-            offset::IMAN => self.lock().unwrap().interrupt_management = value,
-            offset::IMOD => self.lock().unwrap().interrupt_moderation_interval = value,
+            offset::IMAN => guard.interrupt_management = value,
+            offset::IMOD => guard.interrupt_moderation_interval = value,
             offset::ERSTSZ => {
                 let sz = (value as u32) & 0xFFFF;
-                self.lock()
-                    .unwrap()
-                    .event_ring
-                    .lock()
-                    .unwrap()
-                    .set_erst_size(sz);
+                guard.event_ring.lock().unwrap().set_erst_size(sz);
             }
-            offset::ERSTBA => self
-                .lock()
-                .unwrap()
-                .event_ring
-                .lock()
-                .unwrap()
-                .configure(value),
+            offset::ERSTBA => guard.event_ring.lock().unwrap().configure(value),
             offset::ERSTBA_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
-            offset::ERDP => self
-                .lock()
-                .unwrap()
+            offset::ERDP => guard
                 .event_ring
                 .lock()
                 .unwrap()
                 .update_dequeue_pointer(value),
             offset::ERDP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
-            offset::DOORBELL_CONTROLLER => self.lock().unwrap().doorbell_controller(),
-            offset::DOORBELL_DEVICE => self.lock().unwrap().doorbell_device(1, value as u32),
+            offset::DOORBELL_CONTROLLER => guard.doorbell_controller(),
+            offset::DOORBELL_DEVICE => guard.doorbell_device(1, value as u32),
 
             // USB 3.0 Port Status and Control Register (PORTSC_USB3)
-            addr if self.lock().unwrap().get_usb3_portsc_index(addr).is_some() => {
-                let port_idx = self.lock().unwrap().get_usb3_portsc_index(addr).unwrap();
-                self.lock().unwrap().write_usb3_portsc(port_idx, value);
+            addr if guard.get_usb3_portsc_index(addr).is_some() => {
+                // SAFETY: unwrap() is safe because we already checked is_some() in the match guard above
+                let port_idx = guard.get_usb3_portsc_index(addr).unwrap();
+                guard.write_usb3_portsc(port_idx, value);
             }
             // USB 2.0 Port Status and Control Register (PORTSC_USB2)
-            addr if self.lock().unwrap().get_usb2_portsc_index(addr).is_some() => {
-                let port_idx = self.lock().unwrap().get_usb2_portsc_index(addr).unwrap();
-                self.lock().unwrap().write_usb2_portsc(port_idx, value);
+            addr if guard.get_usb2_portsc_index(addr).is_some() => {
+                // SAFETY: unwrap() is safe because we already checked is_some() in the match guard above
+                let port_idx = guard.get_usb2_portsc_index(addr).unwrap();
+                guard.write_usb2_portsc(port_idx, value);
             }
             addr => {
                 todo!("unknown write {}", addr);
             }
         }
+        // Drop the guard early to reduce resource contention as suggested by clippy
+        drop(guard);
     }
 
     fn read_io(&self, region: u32, req: Request) -> u64 {
         // The XHCI Controller has a single MMIO BAR.
         assert_eq!(region, 0);
 
+        let guard = self.lock().unwrap();
         match req.addr {
             // xHC Capability Registers
             offset::CAPLENGTH => OP_BASE,
@@ -660,58 +653,42 @@ impl PciDevice for Mutex<XhciController> {
 
             // xHC Operational Registers
             offset::USBCMD => 0,
-            offset::USBSTS => self.lock().unwrap().status(),
+            offset::USBSTS => guard.status(),
             offset::DNCTL => 2,
-            offset::CRCR => self.lock().unwrap().command_ring.status(),
+            offset::CRCR => guard.command_ring.status(),
             offset::CRCR_HI => 0,
-            offset::DCBAAP => self.lock().unwrap().device_slot_manager.get_dcbaap(),
+            offset::DCBAAP => guard.device_slot_manager.get_dcbaap(),
             offset::DCBAAP_HI => 0,
             offset::PAGESIZE => 0x1, /* 4k Pages */
-            offset::CONFIG => self.lock().unwrap().config(),
+            offset::CONFIG => guard.config(),
 
             // xHC Runtime Registers (moved up for performance)
-            offset::IMAN => self.lock().unwrap().interrupt_management,
-            offset::IMOD => self.lock().unwrap().interrupt_moderation_interval,
-            offset::ERSTSZ => self
-                .lock()
-                .unwrap()
-                .event_ring
-                .lock()
-                .unwrap()
-                .read_erst_size(),
-            offset::ERSTBA => self
-                .lock()
-                .unwrap()
-                .event_ring
-                .lock()
-                .unwrap()
-                .read_base_address(),
+            offset::IMAN => guard.interrupt_management,
+            offset::IMOD => guard.interrupt_moderation_interval,
+            offset::ERSTSZ => guard.event_ring.lock().unwrap().read_erst_size(),
+            offset::ERSTBA => guard.event_ring.lock().unwrap().read_base_address(),
             offset::ERSTBA_HI => 0,
-            offset::ERDP => self
-                .lock()
-                .unwrap()
-                .event_ring
-                .lock()
-                .unwrap()
-                .read_dequeue_pointer(),
+            offset::ERDP => guard.event_ring.lock().unwrap().read_dequeue_pointer(),
             offset::ERDP_HI => 0,
             offset::DOORBELL_CONTROLLER => 0, // kernel reads the doorbell after write
             offset::DOORBELL_DEVICE => 0,
 
             // USB 3.0 Port Status and Control Register (PORTSC_USB3)
-            addr if self.lock().unwrap().get_usb3_portsc_index(addr).is_some() => {
-                let port_idx = self.lock().unwrap().get_usb3_portsc_index(addr).unwrap();
-                self.lock().unwrap().portsc_usb3[port_idx].read()
+            addr if guard.get_usb3_portsc_index(addr).is_some() => {
+                // SAFETY: unwrap() is safe because we already checked is_some() in the match guard above
+                let port_idx = guard.get_usb3_portsc_index(addr).unwrap();
+                guard.portsc_usb3[port_idx].read()
             }
             // USB 3.0 Port Link Info Register (PORTLI_USB3)
-            addr if self.lock().unwrap().get_usb3_portli_index(addr).is_some() => 0,
+            addr if guard.get_usb3_portli_index(addr).is_some() => 0,
             // USB 2.0 Port Status and Control Register (PORTSC_USB2)
-            addr if self.lock().unwrap().get_usb2_portsc_index(addr).is_some() => {
-                let port_idx = self.lock().unwrap().get_usb2_portsc_index(addr).unwrap();
-                self.lock().unwrap().portsc_usb2[port_idx].read()
+            addr if guard.get_usb2_portsc_index(addr).is_some() => {
+                // SAFETY: unwrap() is safe because we already checked is_some() in the match guard above
+                let port_idx = guard.get_usb2_portsc_index(addr).unwrap();
+                guard.portsc_usb2[port_idx].read()
             }
             // USB 2.0 Port Link Info Register (PORTLI_USB2)
-            addr if self.lock().unwrap().get_usb2_portli_index(addr).is_some() => 0,
+            addr if guard.get_usb2_portli_index(addr).is_some() => 0,
 
             // Everything else is Reserved Zero
             addr => {
