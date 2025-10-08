@@ -40,7 +40,7 @@ use super::{
 #[derive(Debug)]
 pub struct XhciController {
     /// real USB devices
-    real_device: Option<Box<dyn RealDevice>>,
+    device_slots: [Option<Box<dyn RealDevice>>; MAX_SLOTS as usize],
 
     /// A reference to the VM memory to perform DMA on.
     #[allow(unused)]
@@ -91,7 +91,7 @@ impl XhciController {
         let dma_bus_for_device_slot_manager = dma_bus.clone();
 
         Self {
-            real_device: None,
+            device_slots: [const { None }; MAX_SLOTS as usize],
             dma_bus,
             config_space: ConfigSpaceBuilder::new(vendor::REDHAT, device::REDHAT_XHCI)
                 .class(class::SERIAL, subclass::SERIAL_USB, progif::USB_XHCI)
@@ -131,7 +131,13 @@ impl XhciController {
     // decide how to handle the failed attachment attempt.
     pub fn set_device(&mut self, device: Box<dyn RealDevice>) {
         if let Some(speed) = device.speed() {
-            self.real_device = Some(device);
+            let slot_index = self
+                .device_slots
+                .iter()
+                .position(|slot| slot.is_none())
+                .expect("No available device slots - all slots are occupied");
+
+            self.device_slots[slot_index] = Some(device);
 
             let portsc = PortscRegister::new(
                 portsc::CCS
@@ -158,7 +164,7 @@ impl XhciController {
                 self.portsc_usb3[port_idx] = portsc;
             }
 
-            info!("Attached {} device", speed);
+            info!("Attached {} device to slot {}", speed, slot_index + 1);
         } else {
             warn!("Failed to attach device: Unable to determine speed");
         }
@@ -429,6 +435,11 @@ impl XhciController {
         let device_context = self.device_slot_manager.get_device_context(data.slot_id);
         let enabled_endpoints = device_context.configure_endpoints(data.input_context_pointer);
         // Program requires real USB device for all XHCI operations (pattern used throughout file)
+        let device_index = data.slot_id as usize - 1;
+        let device = self.device_slots[device_index]
+            .as_mut()
+            .unwrap_or_else(|| panic!("No device in slot {} (index {}) - cannot configure endpoints without a real device", data.slot_id, device_index));
+
         for (i, ep_type) in enabled_endpoints {
             let worker_info = EndpointWorkerInfo {
                 slot_id: data.slot_id,
@@ -438,10 +449,7 @@ impl XhciController {
                 event_ring: self.event_ring.clone(),
                 interrupt_line: self.interrupt_line.clone(),
             };
-            self.real_device
-                .as_mut()
-                .unwrap()
-                .enable_endpoint(worker_info, ep_type);
+            device.enable_endpoint(worker_info, ep_type);
         }
     }
 
@@ -462,7 +470,16 @@ impl XhciController {
                 // reads on the control endpoint), so we never reach this point
                 // when no device is available (except for an invalid doorbell
                 // write, in which case panicking is the right thing to do.
-                self.real_device.as_mut().unwrap().transfer(ep as u8);
+                assert!(
+                    u64::from(slot_id) <= MAX_SLOTS,
+                    "invalid slot_id {} in doorbell",
+                    slot_id
+                );
+                let device_index = slot_id as usize - 1;
+                let device = self.device_slots[device_index]
+                    .as_mut()
+                    .unwrap_or_else(|| panic!("No device in slot {} (index {}) - this should not happen for valid doorbell operations", slot_id, device_index));
+                device.transfer(ep as u8);
             }
         };
     }
@@ -503,9 +520,14 @@ impl XhciController {
             request.data
         );
         // forward request to device
-        if let Some(device) = self.real_device.as_ref() {
-            device.control_transfer(&request, &self.dma_bus);
-        }
+        // Port status change events are suggestions for the driver to check portsc registers.
+        // If no device is found, the driver won't start device initialization. Therefore,
+        // when we reach this control transfer path, we should assume a device is present.
+        let device_index = slot as usize - 1;
+        let device = self.device_slots[device_index]
+            .as_ref()
+            .unwrap_or_else(|| panic!("No device in slot {} (index {}) - this should not happen for valid control transfers", slot, device_index));
+        device.control_transfer(&request, &self.dma_bus);
 
         // send transfer event
         let trb = EventTrb::new_transfer_event_trb(
