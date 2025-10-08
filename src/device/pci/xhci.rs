@@ -460,7 +460,7 @@ impl XhciController {
                 // When the driver rings the doorbell with a non-control
                 // endpoint id, a lot must have happened before (e.g., descriptor
                 // reads on the control endpoint), so we never reach this point
-                // when no device is available (expect for an invalid doorbell
+                // when no device is available (except for an invalid doorbell
                 // write, in which case panicking is the right thing to do.
                 self.real_device.as_mut().unwrap().transfer(ep as u8);
             }
@@ -564,7 +564,11 @@ impl PciDevice for Mutex<XhciController> {
                 .update_dequeue_pointer(value),
             offset::ERDP_HI => assert_eq!(value, 0, "no support for configuration above 4G"),
             offset::DOORBELL_CONTROLLER => guard.doorbell_controller(),
-            offset::DOORBELL_DEVICE => guard.doorbell_device(1, value as u32),
+            // Device Doorbell Registers (DOORBELL_DEVICE)
+            offset::DOORBELL_DEVICE..offset::DOORBELL_DEVICE_END => {
+                let slot_id = ((req.addr - offset::DOORBELL_CONTROLLER) / 4) as u8;
+                guard.doorbell_device(slot_id, value as u32);
+            }
 
             // USB 3.0 Port Status and Control Register (PORTSC_USB3)
             addr if guard.get_usb3_portsc_index(addr).is_some() => {
@@ -629,7 +633,8 @@ impl PciDevice for Mutex<XhciController> {
             offset::ERDP => guard.event_ring.lock().unwrap().read_dequeue_pointer(),
             offset::ERDP_HI => 0,
             offset::DOORBELL_CONTROLLER => 0, // kernel reads the doorbell after write
-            offset::DOORBELL_DEVICE => 0,
+            // Device Doorbell Registers (DOORBELL_DEVICE)
+            offset::DOORBELL_DEVICE..offset::DOORBELL_DEVICE_END => 0,
 
             // USB 3.0 Port Status and Control Register (PORTSC_USB3)
             addr if guard.get_usb3_portsc_index(addr).is_some() => {
