@@ -277,12 +277,10 @@ const fn extract_normal_trb_data(trb: &TransferTrb) -> Option<&NormalTrbData> {
     }
 }
 
-fn determine_buffer_size(guest_transfer_length: usize, max_packet_size: usize) -> usize {
-    if guest_transfer_length < max_packet_size {
+const fn determine_buffer_size(guest_transfer_length: usize, max_packet_size: usize) -> usize {
+    if guest_transfer_length <= max_packet_size {
         max_packet_size
-    } else if guest_transfer_length % max_packet_size == 0 {
-        guest_transfer_length
     } else {
-        panic!("unexpected IN transfer length {}", guest_transfer_length);
+        guest_transfer_length.div_ceil(max_packet_size) * max_packet_size
     }
 }
