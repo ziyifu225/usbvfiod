@@ -124,6 +124,16 @@ impl NusbDeviceWrapper {
             Err(error) => warn!("control out request failed: {:?}", error),
         }
     }
+
+    fn get_interface_number_containing_endpoint(&self, endpoint_id: u8) -> Option<usize> {
+        self.interfaces.iter().position(|interface| {
+            interface
+                .descriptor()
+                .unwrap()
+                .endpoints()
+                .any(|ep| ep.address() == endpoint_id)
+        })
+    }
 }
 
 impl From<nusb::Speed> for Speed {
@@ -272,16 +282,39 @@ impl RealDevice for NusbDeviceWrapper {
         let endpoint_index = endpoint_id / 2;
         let is_out_endpoint = endpoint_id % 2 == 0;
         let endpoint = match is_out_endpoint {
-            true => EndpointWrapper::BulkOut(
-                self.interfaces[0]
-                    .endpoint::<Bulk, Out>(endpoint_index)
-                    .unwrap(),
-            ),
-            false => EndpointWrapper::BulkIn(
-                self.interfaces[0]
-                    .endpoint::<Bulk, In>(0x80 | endpoint_index)
-                    .unwrap(),
-            ),
+            true => {
+                // unwrap can fail when
+                // - driver asks for invalid endpoint (driver's fault)
+                // - driver switched interfaces to alternate modes, which could
+                //   enable endpoint that we are currently not aware of (TODO)
+                // In both cases, we cannot reasonably continue and want to see
+                // what we encountered, so panicking is the intended behavior.
+                let interface_of_endpoint = &self.interfaces[self
+                    .get_interface_number_containing_endpoint(endpoint_index)
+                    .unwrap()];
+                EndpointWrapper::BulkOut(
+                    interface_of_endpoint
+                        .endpoint::<Bulk, Out>(endpoint_index)
+                        .unwrap(),
+                )
+            }
+            false => {
+                let endpoint_index = 0x80 | endpoint_index;
+                // unwrap can fail when
+                // - driver asks for invalid endpoint (driver's fault)
+                // - driver switched interfaces to alternate modes, which could
+                //   enable endpoint that we are currently not aware of (TODO)
+                // In both cases, we cannot reasonably continue and want to see
+                // what we encountered, so panicking is the intended behavior.
+                let interface_of_endpoint = &self.interfaces[self
+                    .get_interface_number_containing_endpoint(endpoint_index)
+                    .unwrap()];
+                EndpointWrapper::BulkIn(
+                    interface_of_endpoint
+                        .endpoint::<Bulk, In>(endpoint_index)
+                        .unwrap(),
+                )
+            }
         };
         self.endpoints[endpoint_id as usize - 2] = Some(endpoint);
         debug!("enabled EP{} on real device", endpoint_id);
