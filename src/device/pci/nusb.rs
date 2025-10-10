@@ -22,7 +22,7 @@ enum EndpointWrapper {
 
 pub struct NusbDeviceWrapper {
     device: nusb::Device,
-    interface: nusb::Interface,
+    interfaces: Vec<nusb::Interface>,
     endpoints: [Option<EndpointWrapper>; 30],
 }
 
@@ -38,11 +38,29 @@ impl Debug for NusbDeviceWrapper {
 
 impl NusbDeviceWrapper {
     pub fn new(device: nusb::Device) -> Self {
-        // Program requires USB interface 0 to function, panic if unavailable
-        let interface = device.detach_and_claim_interface(0).wait().unwrap();
+        // Claim all interfaces
+        let mut interfaces = vec![];
+        // when we cannot get the active configuration, i.e., not properly talk
+        // to the device, panicking is currently the desired behavior to
+        // identify the situation in which the problem occurred.
+        let desc = device.active_configuration().unwrap();
+        for interface in desc.interfaces() {
+            let interface_number = interface.interface_number();
+            debug!("Enabling interface {}", interface_number);
+            // when we cannot claim an interface of the device, panicking is
+            // currently the desired behavior to identify the situation in which
+            // the problem occurred.
+            interfaces.push(
+                device
+                    .detach_and_claim_interface(interface_number)
+                    .wait()
+                    .unwrap(),
+            );
+        }
+
         Self {
             device,
-            interface,
+            interfaces,
             endpoints: std::array::from_fn(|_| None),
         }
     }
@@ -105,6 +123,16 @@ impl NusbDeviceWrapper {
             Ok(_) => debug!("control out success"),
             Err(error) => warn!("control out request failed: {:?}", error),
         }
+    }
+
+    fn get_interface_number_containing_endpoint(&self, endpoint_id: u8) -> Option<usize> {
+        self.interfaces.iter().position(|interface| {
+            interface
+                .descriptor()
+                .unwrap()
+                .endpoints()
+                .any(|ep| ep.address() == endpoint_id)
+        })
     }
 }
 
@@ -254,16 +282,39 @@ impl RealDevice for NusbDeviceWrapper {
         let endpoint_index = endpoint_id / 2;
         let is_out_endpoint = endpoint_id % 2 == 0;
         let endpoint = match is_out_endpoint {
-            true => EndpointWrapper::BulkOut(
-                self.interface
-                    .endpoint::<Bulk, Out>(endpoint_index)
-                    .unwrap(),
-            ),
-            false => EndpointWrapper::BulkIn(
-                self.interface
-                    .endpoint::<Bulk, In>(0x80 | endpoint_index)
-                    .unwrap(),
-            ),
+            true => {
+                // unwrap can fail when
+                // - driver asks for invalid endpoint (driver's fault)
+                // - driver switched interfaces to alternate modes, which could
+                //   enable endpoint that we are currently not aware of (TODO)
+                // In both cases, we cannot reasonably continue and want to see
+                // what we encountered, so panicking is the intended behavior.
+                let interface_of_endpoint = &self.interfaces[self
+                    .get_interface_number_containing_endpoint(endpoint_index)
+                    .unwrap()];
+                EndpointWrapper::BulkOut(
+                    interface_of_endpoint
+                        .endpoint::<Bulk, Out>(endpoint_index)
+                        .unwrap(),
+                )
+            }
+            false => {
+                let endpoint_index = 0x80 | endpoint_index;
+                // unwrap can fail when
+                // - driver asks for invalid endpoint (driver's fault)
+                // - driver switched interfaces to alternate modes, which could
+                //   enable endpoint that we are currently not aware of (TODO)
+                // In both cases, we cannot reasonably continue and want to see
+                // what we encountered, so panicking is the intended behavior.
+                let interface_of_endpoint = &self.interfaces[self
+                    .get_interface_number_containing_endpoint(endpoint_index)
+                    .unwrap()];
+                EndpointWrapper::BulkIn(
+                    interface_of_endpoint
+                        .endpoint::<Bulk, In>(endpoint_index)
+                        .unwrap(),
+                )
+            }
         };
         self.endpoints[endpoint_id as usize - 2] = Some(endpoint);
         debug!("enabled EP{} on real device", endpoint_id);
