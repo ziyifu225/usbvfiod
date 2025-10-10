@@ -17,6 +17,7 @@ let
           # The virtio-console is an option as well, but is not
           # compiled into the NixOS kernel and would be inconvenient.
           "console=ttyS0"
+
           # Enable dyndbg messages for the XHCI driver.
           "xhci_pci.dyndbg==pmfl"
           "xhci_hcd.dyndbg==pmfl"
@@ -34,6 +35,7 @@ let
         # Add user services that run on automatic login.
         systemd.user.services = {
           diagnostic-tests = {
+            enable = false; # disk already being accessed by testScript
             description = "Run diagnostic tests";
             wantedBy = [ "default.target" ];
 
@@ -216,22 +218,30 @@ in
 
       machine.wait_for_unit("cloud-hypervisor.service")
 
-      # Check whether the USB controller pops up.
-      machine.wait_until_succeeds("grep -Fq 'usb usb1: Product: xHCI Host Controller' ${cloudHypervisorLog}", timeout=3000)
-      machine.wait_until_succeeds("grep -Eq 'hub 1-0:1\\.0: [0-9]+ ports? detected' ${cloudHypervisorLog}")
+      # check sshd in systemd.services.cloud-hypervisor is usable prior to testing over ssh
+      # the first connection hangs indefinitely and likely is not getting a proper shell and ss ignores TERM
+      # timeout with KILL prevents waiting and at some point timing out due to wait_until_succeeds
+      machine.wait_until_succeeds("timeout --signal=KILL --verbose 5 ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'exit 0'")
 
-      # Read the diagnostic information after login.
-      machine.wait_until_succeeds("grep -Eq '\s+[1-9][0-9]*\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'ID ${vendorId}:${productId} QEMU QEMU USB HARDDRIVE' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'Disk /dev/sda:' ${cloudHypervisorLog}")
+      # Confirm USB controller pops up in boot logs
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'journalctl -b' | grep -E 'usb usb1: Product: xHCI Host Controller'")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'journalctl -b' | grep -E 'hub 1-0:1\.0: [0-9]+ ports? detected'")
 
-      # Confirm the partition creation was successful.
-      machine.wait_until_succeeds("grep -q 'Disklabel type: gpt' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -Eq '/dev/sda1 .* Linux filesystem' ${cloudHypervisorLog}")
+      # Confirm some diagnostic information
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'cat /proc/interrupts' | grep -E ' +[1-9][0-9]* +PCI-MSIX.*xhci_hcd'")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'lsusb' | grep 'ID ${vendorId}:${productId} QEMU QEMU USB HARDDRIVE'")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'sfdisk -l' | grep 'Disk /dev/sda:'")
 
-      # Confirm the filesystem is functional.
-      machine.wait_until_succeeds("grep -q 'Successfully created a new ext4 filesystem on the blockdevice.' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'This is a new partition with ext4 filesystem.' ${cloudHypervisorLog}")
+      # Test partitioning
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'echo ',,L' | sfdisk --label=gpt /dev/sda'")
+      
+      # Create and test filesystem
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'mkfs.ext4 /dev/sda1'")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'mount /dev/sda1 /mnt '")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'echo 123TEST123 > /mnt/file.txt'")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'umount /mnt '")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'mount /dev/sda1 /mnt '")
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'cat /mnt/file.txt'")
     '';
   };
 }
