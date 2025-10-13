@@ -456,8 +456,14 @@ impl XhciController {
         match value {
             ep if ep == 0 || ep > 31 => panic!("invalid value {} on doorbell write", ep),
             1 => self.check_control_endpoint(slot_id),
-            ep if ep % 2 == 0 => self.check_out_endpoint(slot_id, ep as u8),
-            ep => self.check_in_endpoint(slot_id, ep as u8),
+            ep => {
+                // When the driver rings the doorbell with a non-control
+                // endpoint id, a lot must have happened before (e.g., descriptor
+                // reads on the control endpoint), so we never reach this point
+                // when no device is available (expect for an invalid doorbell
+                // write, in which case panicking is the right thing to do.
+                self.real_device.as_mut().unwrap().transfer(ep as u8);
+            }
         };
     }
 
@@ -513,14 +519,6 @@ impl XhciController {
         self.event_ring.lock().unwrap().enqueue(&trb);
         self.interrupt_line.interrupt();
         debug!("sent Transfer Event and signaled interrupt");
-    }
-
-    fn check_out_endpoint(&mut self, _slot: u8, ep: u8) {
-        self.real_device.as_mut().unwrap().transfer_out(ep);
-    }
-
-    fn check_in_endpoint(&mut self, _slot: u8, ep: u8) {
-        self.real_device.as_mut().unwrap().transfer_in(ep);
     }
 }
 
