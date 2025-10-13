@@ -1,6 +1,6 @@
 use nusb::transfer::{Buffer, Bulk, ControlIn, ControlOut, ControlType, In, Out, Recipient};
 use nusb::MaybeFuture;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::device::bus::BusDeviceRef;
 use crate::device::pci::trb::{CompletionCode, EventTrb};
@@ -297,6 +297,11 @@ fn transfer_in_worker(
             .dma_bus
             .write_bulk(normal_data.data_pointer, &buffer.buffer[..byte_count_dma]);
 
+        if !normal_data.interrupt_on_completion {
+            trace!("Processed TRB without IOC flag; sending no transfer event");
+            continue;
+        }
+
         let (completion_code, residual_bytes) = (CompletionCode::Success, 0);
 
         let transfer_event = EventTrb::new_transfer_event_trb(
@@ -354,6 +359,11 @@ fn transfer_out_worker(
         endpoint
             .wait_next_complete(Duration::from_millis(800))
             .unwrap();
+
+        if !normal_data.interrupt_on_completion {
+            trace!("Processed TRB without IOC flag; sending no transfer event");
+            continue;
+        }
 
         let (completion_code, residual_bytes) = (CompletionCode::Success, 0);
 
