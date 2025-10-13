@@ -1,4 +1,7 @@
-use nusb::transfer::{Buffer, Bulk, ControlIn, ControlOut, ControlType, In, Out, Recipient};
+use nusb::transfer::{
+    Buffer, Bulk, BulkOrInterrupt, ControlIn, ControlOut, ControlType, In, Interrupt, Out,
+    Recipient,
+};
 use nusb::MaybeFuture;
 use tracing::{debug, trace, warn};
 
@@ -174,7 +177,7 @@ impl RealDevice for NusbDeviceWrapper {
         };
     }
 
-    fn enable_endpoint(&mut self, worker_info: EndpointWorkerInfo, _endpoint_type: EndpointType) {
+    fn enable_endpoint(&mut self, worker_info: EndpointWorkerInfo, endpoint_type: EndpointType) {
         let endpoint_id = worker_info.endpoint_id;
         assert!(
             (2..=31).contains(&endpoint_id),
@@ -221,11 +224,31 @@ impl RealDevice for NusbDeviceWrapper {
                 let interface_of_endpoint = &self.interfaces[self
                     .get_interface_number_containing_endpoint(endpoint_index)
                     .unwrap()];
-                let endpoint = interface_of_endpoint
-                    .endpoint::<Bulk, In>(endpoint_index)
-                    .unwrap();
                 let (sender, receiver) = mpsc::channel();
-                thread::spawn(move || transfer_in_worker(endpoint, worker_info, receiver));
+                match endpoint_type {
+                    EndpointType::BulkIn => {
+                        let endpoint = interface_of_endpoint
+                            .endpoint::<Bulk, In>(endpoint_index)
+                            .unwrap();
+                        thread::spawn(move || {
+                            transfer_in_worker::<Bulk>(endpoint, worker_info, receiver)
+                        });
+                    }
+                    EndpointType::InterruptIn => {
+                        let endpoint = interface_of_endpoint
+                            .endpoint::<Interrupt, In>(endpoint_index)
+                            .unwrap();
+                        thread::spawn(move || {
+                            transfer_in_worker::<Interrupt>(endpoint, worker_info, receiver)
+                        });
+                    }
+                    _ => {
+                        panic!(
+                            "Unexpected endpoint type for IN endpoint: {:?}",
+                            endpoint_type
+                        );
+                    }
+                }
                 sender
             }
         };
@@ -236,8 +259,8 @@ impl RealDevice for NusbDeviceWrapper {
 
 // cognitive complexity required because of the high cost of trace! messages
 #[allow(clippy::cognitive_complexity)]
-fn transfer_in_worker(
-    mut endpoint: nusb::Endpoint<Bulk, In>,
+fn transfer_in_worker<EpType: BulkOrInterrupt>(
+    mut endpoint: nusb::Endpoint<EpType, In>,
     worker_info: EndpointWorkerInfo,
     wakeup: Receiver<()>,
 ) {
