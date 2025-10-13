@@ -12,12 +12,6 @@ let
       ({ config, ... }: {
 
         boot.kernelParams = [
-          # Use the serial console for kernel output.
-          #
-          # The virtio-console is an option as well, but is not
-          # compiled into the NixOS kernel and would be inconvenient.
-          "console=ttyS0"
-
           # Enable dyndbg messages for the XHCI driver.
           "xhci_pci.dyndbg==pmfl"
           "xhci_hcd.dyndbg==pmfl"
@@ -26,44 +20,8 @@ let
         # Enable debug verbosity.
         boot.consoleLogLevel = 8;
 
-        # allow disk access for users
-        users.users.nixos.extraGroups = [ "disk" ];
-
         # Convenience packages for interactive use
         environment.systemPackages = with pkgs; [ pciutils usbutils ];
-
-        # Add user services that run on automatic login.
-        systemd.user.services = {
-          diagnostic-tests = {
-            enable = false; # disk already being accessed by testScript
-            description = "Run diagnostic tests";
-            wantedBy = [ "default.target" ];
-
-            serviceConfig = {
-              ExecStart = pkgs.writeShellScript "diagnostic-tests" ''
-                echo Running Diagnostics
-                cat /proc/interrupts
-                echo " "
-                ${pkgs.usbutils}/bin/lsusb
-                ${pkgs.util-linux}/bin/sfdisk -l
-                echo " "
-                echo ',,L' | /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/sfdisk --label=gpt /dev/sda
-                echo " "
-                /run/wrappers/bin/sudo ${pkgs.e2fsprogs}/bin/mkfs.ext4 /dev/sda1 && echo "Successfully created a new ext4 filesystem on the blockdevice."
-                echo " "
-                /run/wrappers/bin/sudo ${pkgs.coreutils}/bin/mkdir -p /mnt
-                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/mount -o X-mount.owner=nixos /dev/sda1 /mnt
-                echo " "
-                echo "This is a new partition with ext4 filesystem." > /mnt/file.txt
-                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/umount /mnt
-                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/mount -o X-mount.owner=nixos /dev/sda1 /mnt
-                cat /mnt/file.txt
-              '';
-              StandardOutput = "journal+console";
-              StandardError = "journal+console";
-            };
-          };
-        };
 
         # network configuration for interactive debugging
         networking.interfaces."ens1" = {
@@ -116,7 +74,6 @@ let
   # good choice for a production setup, but for this test it works
   # well.
   usbvfiodSocket = "/tmp/usbvfio";
-  cloudHypervisorLog = "/tmp/chv.log";
   vendorId = "46f4";
   productId = "0001";
 
@@ -169,7 +126,7 @@ in
             Restart = "on-failure";
             RestartSec = "2s";
             ExecStart = ''
-              ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
+              ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off \
                 --kernel ${netboot.kernel} \
                 --cmdline ${lib.escapeShellArg netboot.cmdline} \
                 --initramfs ${netboot.initrd} \
