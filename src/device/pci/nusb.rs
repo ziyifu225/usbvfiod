@@ -100,8 +100,12 @@ impl NusbDeviceWrapper {
         fence(Ordering::Release);
     }
 
-    fn control_transfer_host_to_device(&self, request: &UsbRequest, _dma_bus: &BusDeviceRef) {
-        let data = Vec::new();
+    fn control_transfer_host_to_device(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
+        let data = request.data.map_or_else(Vec::new, |addr| {
+            let mut data = vec![0; request.length as usize];
+            dma_bus.read_bulk(addr, &mut data);
+            data
+        });
         let control = ControlOut {
             control_type: ControlType::Standard,
             recipient: Recipient::Device,
@@ -112,9 +116,6 @@ impl NusbDeviceWrapper {
         };
 
         debug!("sending control out request to device");
-        if request.data.is_some() {
-            todo!("cannot handle control out with data currently")
-        };
         match self
             .device
             .control_out(control, Duration::from_millis(200))
