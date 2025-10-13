@@ -296,10 +296,10 @@ fn transfer_in_worker<EpType: BulkOrInterrupt>(
         let buffer_size = determine_buffer_size(transfer_length, endpoint.max_packet_size());
         let buffer = Buffer::new(buffer_size);
         endpoint.submit(buffer);
-        // Timeout indicates device unresponsive - no reasonable recovery possible
-        let buffer = endpoint
-            .wait_next_complete(Duration::from_millis(800))
-            .unwrap();
+        // We do not want to time out on requests. We should probably use async
+        // because nusb supports either async requests or synchronous variants
+        // with timeouts. Manually implementing polling seems overkill here.
+        let buffer = endpoint.wait_next_complete(Duration::MAX).unwrap();
         let byte_count_dma = match buffer.actual_len.cmp(&transfer_length) {
             Greater => {
                 // Got more data than requested. We must not write more data than
