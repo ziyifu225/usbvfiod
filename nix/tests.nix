@@ -33,23 +33,29 @@ let
 
         # Add user services that run on automatic login.
         systemd.user.services = {
-          dump-diagnostics = {
-            description = "Dump diagnostic information";
+          diagnostic-tests = {
+            description = "Run diagnostic tests";
             wantedBy = [ "default.target" ];
 
             serviceConfig = {
-              ExecStart = pkgs.writeShellScript "diagnostic-dump" ''
-                echo Dumping Diagnostics
+              ExecStart = pkgs.writeShellScript "diagnostic-tests" ''
+                echo Running Diagnostics
                 cat /proc/interrupts
-                echo
+                echo " "
                 ${pkgs.usbutils}/bin/lsusb
-                echo
-                ${pkgs.util-linux}/bin/fdisk -l
-                echo
-                cat /dev/sda
-                echo
-                echo -n "You are" > /dev/sda
-                cat /dev/sda
+                ${pkgs.util-linux}/bin/sfdisk -l
+                echo " "
+                echo ',,L' | /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/sfdisk --label=gpt /dev/sda
+                echo " "
+                /run/wrappers/bin/sudo ${pkgs.e2fsprogs}/bin/mkfs.ext4 /dev/sda1 && echo "Successfully created a new ext4 filesystem on the blockdevice."
+                echo " "
+                /run/wrappers/bin/sudo ${pkgs.coreutils}/bin/mkdir -p /mnt
+                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/mount -o X-mount.owner=nixos /dev/sda1 /mnt
+                echo " "
+                echo "This is a new partition with ext4 filesystem." > /mnt/file.txt
+                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/umount /mnt
+                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/mount -o X-mount.owner=nixos /dev/sda1 /mnt
+                cat /mnt/file.txt
               '';
               StandardOutput = "journal+console";
               StandardError = "journal+console";
@@ -113,9 +119,8 @@ let
   productId = "0001";
 
   # Provide a raw file as usb stick test image.
-  usbDiskImage = pkgs.writeText "usb-stick-image.raw" ''
-    This is an uninitialized drive.
-  '';
+  blockDeviceFile = "/tmp/image.img";
+  blockDeviceSize = "8M";
 
   # Report for target device path and access permissions
   usbDeviceInfoScript = pkgs.writeShellScript "usb-device-info" ''
@@ -215,7 +220,7 @@ in
           # A virtual USB XHCI controller in the host ...
           "-device qemu-xhci,id=host-xhci,addr=10"
           # ... with an attached usb stick.
-          "-drive if=none,id=usbstick,format=raw,snapshot=on,file=${usbDiskImage}"
+          "-drive if=none,id=usbstick,format=raw,file=${blockDeviceFile}"
           "-device usb-storage,bus=host-xhci.0,drive=usbstick"
         ];
       };
@@ -224,6 +229,11 @@ in
     # The nested CI runs are really slow.
     globalTimeout = 3600;
     testScript = ''
+      import os
+      print("Creating file image at ${blockDeviceFile}")
+      os.system("rm ${blockDeviceFile}")
+      os.system("dd bs=1  count=1 seek=${blockDeviceSize} if=/dev/zero of=${blockDeviceFile}")
+
       start_all()
 
       # Display device path and access permissions
@@ -241,8 +251,14 @@ in
       machine.wait_until_succeeds("grep -Eq '\s+[1-9][0-9]*\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
       machine.wait_until_succeeds("grep -q 'ID ${vendorId}:${productId} QEMU QEMU USB HARDDRIVE' ${cloudHypervisorLog}")
       machine.wait_until_succeeds("grep -q 'Disk /dev/sda:' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'This is an uninitialized drive.' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'You are an uninitialized drive.' ${cloudHypervisorLog}")
+
+      # Confirm the partition creation was successful.
+      machine.wait_until_succeeds("grep -q 'Disklabel type: gpt' ${cloudHypervisorLog}")
+      machine.wait_until_succeeds("grep -Eq '/dev/sda1 .* Linux filesystem' ${cloudHypervisorLog}")
+
+      # Confirm the filesystem is functional.
+      machine.wait_until_succeeds("grep -q 'Successfully created a new ext4 filesystem on the blockdevice.' ${cloudHypervisorLog}")
+      machine.wait_until_succeeds("grep -q 'This is a new partition with ext4 filesystem.' ${cloudHypervisorLog}")
     '';
   };
 }
