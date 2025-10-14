@@ -163,7 +163,7 @@ impl RealDevice for NusbDeviceWrapper {
         // transfer requires targeted endpoint to be enabled, panic if not
         match self.endpoints[endpoint_id as usize - 2].as_mut() {
             Some(sender) => {
-                let _ = sender.send(());
+                sender.send(()).unwrap();
             }
             None => panic!("transfer for uninitialized endpoint (EP{})", endpoint_id),
         };
