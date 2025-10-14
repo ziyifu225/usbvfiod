@@ -166,6 +166,7 @@ impl RealDevice for NusbDeviceWrapper {
             // so sending should never fail. When the worker has panicked, it
             // makes sense for us to panic as well.
             Some(sender) => {
+                trace!("Sending wake up to worker of ep {}", endpoint_id);
                 sender.send(()).unwrap();
             }
             None => panic!("transfer for uninitialized endpoint (EP{})", endpoint_id),
@@ -232,6 +233,8 @@ impl RealDevice for NusbDeviceWrapper {
     }
 }
 
+// cognitive complexity required because of the high cost of trace! messages
+#[allow(clippy::cognitive_complexity)]
 fn transfer_in_worker(
     mut endpoint: nusb::Endpoint<Bulk, In>,
     worker_info: EndpointWorkerInfo,
@@ -241,9 +244,17 @@ fn transfer_in_worker(
         let trb = match worker_info.transfer_ring.next_transfer_trb() {
             Some(trb) => trb,
             None => {
+                trace!(
+                    "worker thread ep {}: No TRB on transfer ring, going to sleep",
+                    worker_info.endpoint_id
+                );
                 // We currently assume that the main thread always keeps the
                 // channel open, so unwrap is safe.
                 wakeup.recv().unwrap();
+                trace!(
+                    "worker thread ep {}: Received wake up",
+                    worker_info.endpoint_id
+                );
                 continue;
             }
         };
@@ -329,6 +340,8 @@ fn transfer_in_worker(
     }
 }
 
+// cognitive complexity required because of the high cost of trace! messages
+#[allow(clippy::cognitive_complexity)]
 fn transfer_out_worker(
     mut endpoint: nusb::Endpoint<Bulk, Out>,
     worker_info: EndpointWorkerInfo,
@@ -338,9 +351,17 @@ fn transfer_out_worker(
         let trb = match worker_info.transfer_ring.next_transfer_trb() {
             Some(trb) => trb,
             None => {
+                trace!(
+                    "worker thread ep {}: No TRB on transfer ring, going to sleep",
+                    worker_info.endpoint_id
+                );
                 // We currently assume that the main thread always keeps the
                 // channel open, so unwrap is safe.
                 wakeup.recv().unwrap();
+                trace!(
+                    "worker thread ep {}: Received wake up",
+                    worker_info.endpoint_id
+                );
                 continue;
             }
         };
