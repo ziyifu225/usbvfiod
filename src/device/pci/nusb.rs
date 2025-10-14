@@ -162,6 +162,9 @@ impl RealDevice for NusbDeviceWrapper {
     fn transfer(&mut self, endpoint_id: u8) {
         // transfer requires targeted endpoint to be enabled, panic if not
         match self.endpoints[endpoint_id as usize - 2].as_mut() {
+            // Currently we start an endpoint worker once and never stop it,
+            // so sending should never fail. When the worker has panicked, it
+            // makes sense for us to panic as well.
             Some(sender) => {
                 sender.send(()).unwrap();
             }
@@ -238,6 +241,8 @@ fn transfer_in_worker(
         let trb = match worker_info.transfer_ring.next_transfer_trb() {
             Some(trb) => trb,
             None => {
+                // We currently assume that the main thread always keeps the
+                // channel open, so unwrap is safe.
                 wakeup.recv().unwrap();
                 continue;
             }
@@ -333,6 +338,8 @@ fn transfer_out_worker(
         let trb = match worker_info.transfer_ring.next_transfer_trb() {
             Some(trb) => trb,
             None => {
+                // We currently assume that the main thread always keeps the
+                // channel open, so unwrap is safe.
                 wakeup.recv().unwrap();
                 continue;
             }
