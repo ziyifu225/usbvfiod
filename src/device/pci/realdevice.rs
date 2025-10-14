@@ -1,10 +1,13 @@
-use crate::device::bus::BusDeviceRef;
+use crate::device::{bus::BusDeviceRef, interrupt_line::InterruptLine};
 
 use super::{
-    trb::{CompletionCode, TransferTrb},
+    rings::{EventRing, TransferRing},
     usbrequest::UsbRequest,
 };
-use std::fmt::{self, Debug};
+use std::{
+    fmt::{self, Debug},
+    sync::{Arc, Mutex},
+};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,19 +41,8 @@ impl fmt::Display for Speed {
 pub trait RealDevice: Debug {
     fn speed(&self) -> Option<Speed>;
     fn control_transfer(&self, request: &UsbRequest, dma_bus: &BusDeviceRef);
-    fn enable_endpoint(&mut self, endpoint_id: u8, endpoint_type: EndpointType);
-    fn transfer_out(
-        &mut self,
-        endpoint_id: u8,
-        trb: &TransferTrb,
-        dma_bus: &BusDeviceRef,
-    ) -> (CompletionCode, u32);
-    fn transfer_in(
-        &mut self,
-        endpoint_id: u8,
-        trb: &TransferTrb,
-        dma_bus: &BusDeviceRef,
-    ) -> (CompletionCode, u32);
+    fn enable_endpoint(&mut self, worker_info: EndpointWorkerInfo, endpoint_type: EndpointType);
+    fn transfer(&mut self, endpoint_id: u8);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,4 +51,22 @@ pub enum EndpointType {
     BulkIn,
     BulkOut,
     InterruptIn,
+}
+
+/// This struct provides all required information to a worker thread to handle
+/// TRBs on an endpoint.
+#[derive(Debug)]
+pub struct EndpointWorkerInfo {
+    /// The slot ID of the device.
+    pub slot_id: u8,
+    /// The endpoint the worker should service.
+    pub endpoint_id: u8,
+    /// Transfer ring of the endpoint to retrieve TRBs.
+    pub transfer_ring: TransferRing,
+    /// Bus reference for DMAing the data the TRBs reference.
+    pub dma_bus: BusDeviceRef,
+    /// Event ring to enqueue transfer events.
+    pub event_ring: Arc<Mutex<EventRing>>,
+    /// Interrupt line to notify about enqueued transfer events.
+    pub interrupt_line: Arc<dyn InterruptLine>,
 }

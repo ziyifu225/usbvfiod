@@ -1,29 +1,26 @@
 use nusb::transfer::{Buffer, Bulk, ControlIn, ControlOut, ControlType, In, Out, Recipient};
 use nusb::MaybeFuture;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::device::bus::BusDeviceRef;
-use crate::device::pci::trb::CompletionCode;
+use crate::device::pci::trb::{CompletionCode, EventTrb};
 
-use super::realdevice::{EndpointType, Speed};
+use super::realdevice::{EndpointType, EndpointWorkerInfo, Speed};
 use super::trb::{NormalTrbData, TransferTrb, TransferTrbVariant};
 use super::{realdevice::RealDevice, usbrequest::UsbRequest};
 use std::cmp::Ordering::*;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
 use std::{
     fmt::Debug,
     sync::atomic::{fence, Ordering},
     time::Duration,
 };
 
-enum EndpointWrapper {
-    BulkIn(nusb::Endpoint<Bulk, In>),
-    BulkOut(nusb::Endpoint<Bulk, Out>),
-}
-
 pub struct NusbDeviceWrapper {
     device: nusb::Device,
     interfaces: Vec<nusb::Interface>,
-    endpoints: [Option<EndpointWrapper>; 30],
+    endpoints: [Option<Sender<()>>; 30],
 }
 
 impl Debug for NusbDeviceWrapper {
@@ -163,62 +160,122 @@ impl RealDevice for NusbDeviceWrapper {
         }
     }
 
-    fn transfer_out(
-        &mut self,
-        endpoint_id: u8,
-        trb: &TransferTrb,
-        dma_bus: &BusDeviceRef,
-    ) -> (CompletionCode, u32) {
-        assert!(
-            matches!(trb.variant, TransferTrbVariant::Normal(_)),
-            "Expected Normal TRB but got {:?}",
-            trb
-        );
-
-        let ep_out = match self.endpoints[endpoint_id as usize - 2].as_mut() {
-            Some(EndpointWrapper::BulkOut(ep)) => ep,
-            None => panic!("transfer_in for uninitialized endpoint (EP{})", endpoint_id),
-            _ => unreachable!(),
+    fn transfer(&mut self, endpoint_id: u8) {
+        // transfer requires targeted endpoint to be enabled, panic if not
+        match self.endpoints[endpoint_id as usize - 2].as_mut() {
+            // Currently we start an endpoint worker once and never stop it,
+            // so sending should never fail. When the worker has panicked, it
+            // makes sense for us to panic as well.
+            Some(sender) => {
+                trace!("Sending wake up to worker of ep {}", endpoint_id);
+                sender.send(()).unwrap();
+            }
+            None => panic!("transfer for uninitialized endpoint (EP{})", endpoint_id),
         };
-        // SAFETY: assert above guarantees TRB is Normal variant
-        let normal_data = extract_normal_trb_data(trb).unwrap();
-
-        let mut data = vec![0; normal_data.transfer_length as usize];
-        dma_bus.read_bulk(normal_data.data_pointer, &mut data);
-        ep_out.submit(data.into());
-        ep_out
-            .wait_next_complete(Duration::from_millis(400))
-            .unwrap();
-        (CompletionCode::Success, 0)
     }
 
-    fn transfer_in(
-        &mut self,
-        endpoint_id: u8,
-        trb: &TransferTrb,
-        dma_bus: &BusDeviceRef,
-    ) -> (CompletionCode, u32) {
+    fn enable_endpoint(&mut self, worker_info: EndpointWorkerInfo, _endpoint_type: EndpointType) {
+        let endpoint_id = worker_info.endpoint_id;
+        assert!(
+            (2..=31).contains(&endpoint_id),
+            "request to enable invalid endpoint id on nusb device. endpoint_id = {}",
+            endpoint_id
+        );
+        if self.endpoints[endpoint_id as usize - 2].is_some() {
+            // endpoint is already enabled.
+            //
+            // The Linux kernel configures and directly afterwards reconfigures
+            // the endpoints (probably due to a very generic configuration
+            // implementation), triggering multiple `enable_endpoint` calls.
+            return;
+        }
+
+        let endpoint_index = endpoint_id / 2;
+        let is_out_endpoint = endpoint_id % 2 == 0;
+        let endpoint_sender = match is_out_endpoint {
+            true => {
+                // unwrap can fail when
+                // - driver asks for invalid endpoint (driver's fault)
+                // - driver switched interfaces to alternate modes, which could
+                //   enable endpoint that we are currently not aware of (TODO)
+                // In both cases, we cannot reasonably continue and want to see
+                // what we encountered, so panicking is the intended behavior.
+                let interface_of_endpoint = &self.interfaces[self
+                    .get_interface_number_containing_endpoint(endpoint_index)
+                    .unwrap()];
+                let endpoint = interface_of_endpoint
+                    .endpoint::<Bulk, Out>(endpoint_index)
+                    .unwrap();
+                let (sender, receiver) = mpsc::channel();
+                thread::spawn(move || transfer_out_worker(endpoint, worker_info, receiver));
+                sender
+            }
+            false => {
+                let endpoint_index = 0x80 | endpoint_index;
+                // unwrap can fail when
+                // - driver asks for invalid endpoint (driver's fault)
+                // - driver switched interfaces to alternate modes, which could
+                //   enable endpoint that we are currently not aware of (TODO)
+                // In both cases, we cannot reasonably continue and want to see
+                // what we encountered, so panicking is the intended behavior.
+                let interface_of_endpoint = &self.interfaces[self
+                    .get_interface_number_containing_endpoint(endpoint_index)
+                    .unwrap()];
+                let endpoint = interface_of_endpoint
+                    .endpoint::<Bulk, In>(endpoint_index)
+                    .unwrap();
+                let (sender, receiver) = mpsc::channel();
+                thread::spawn(move || transfer_in_worker(endpoint, worker_info, receiver));
+                sender
+            }
+        };
+        self.endpoints[endpoint_id as usize - 2] = Some(endpoint_sender);
+        debug!("enabled EP{} on real device", endpoint_id);
+    }
+}
+
+// cognitive complexity required because of the high cost of trace! messages
+#[allow(clippy::cognitive_complexity)]
+fn transfer_in_worker(
+    mut endpoint: nusb::Endpoint<Bulk, In>,
+    worker_info: EndpointWorkerInfo,
+    wakeup: Receiver<()>,
+) {
+    loop {
+        let trb = match worker_info.transfer_ring.next_transfer_trb() {
+            Some(trb) => trb,
+            None => {
+                trace!(
+                    "worker thread ep {}: No TRB on transfer ring, going to sleep",
+                    worker_info.endpoint_id
+                );
+                // We currently assume that the main thread always keeps the
+                // channel open, so unwrap is safe.
+                wakeup.recv().unwrap();
+                trace!(
+                    "worker thread ep {}: Received wake up",
+                    worker_info.endpoint_id
+                );
+                continue;
+            }
+        };
         assert!(
             matches!(trb.variant, TransferTrbVariant::Normal(_)),
             "Expected Normal TRB but got {:?}",
             trb
         );
 
-        // transfer_in requires targeted endpoint to be enabled, panic if not
-        let ep_in = match self.endpoints[endpoint_id as usize - 2].as_mut() {
-            Some(EndpointWrapper::BulkIn(ep)) => ep,
-            None => panic!("transfer_in for uninitialized endpoint (EP{})", endpoint_id),
-            _ => unreachable!(),
-        };
-        let normal_data = extract_normal_trb_data(trb).unwrap();
+        // The assertion above guarantees that the TRB is a normal TRB. A wrong
+        // TRB type is the only reason the unwrap can fail.
+        let normal_data = extract_normal_trb_data(&trb).unwrap();
         let transfer_length = normal_data.transfer_length as usize;
 
-        let buffer_size = determine_buffer_size(transfer_length, ep_in.max_packet_size());
+        let buffer_size = determine_buffer_size(transfer_length, endpoint.max_packet_size());
         let buffer = Buffer::new(buffer_size);
-        ep_in.submit(buffer);
+        endpoint.submit(buffer);
         // Timeout indicates device unresponsive - no reasonable recovery possible
-        let buffer = ep_in
-            .wait_next_complete(Duration::from_millis(400))
+        let buffer = endpoint
+            .wait_next_complete(Duration::from_millis(800))
             .unwrap();
         let byte_count_dma = match buffer.actual_len.cmp(&transfer_length) {
             Greater => {
@@ -253,72 +310,109 @@ impl RealDevice for NusbDeviceWrapper {
                 transfer_length
             }
         };
-        dma_bus.write_bulk(normal_data.data_pointer, &buffer.buffer[..byte_count_dma]);
-        (CompletionCode::Success, 0)
-    }
+        worker_info
+            .dma_bus
+            .write_bulk(normal_data.data_pointer, &buffer.buffer[..byte_count_dma]);
 
-    fn enable_endpoint(&mut self, endpoint_id: u8, _endpoint_type: EndpointType) {
-        if endpoint_id == 1 {
-            // id of the control endpoint
-            //
-            // nusb allows us to perform control requests directly on the
-            // interface, so there is no need for us to open/track this
-            // endpoint.
-            return;
+        if !normal_data.interrupt_on_completion {
+            trace!("Processed TRB without IOC flag; sending no transfer event");
+            continue;
         }
-        assert!(
-            (2..=31).contains(&endpoint_id),
-            "request to enable invalid endpoint id on nusb device. endpoint_id = {}",
-            endpoint_id
+
+        let (completion_code, residual_bytes) = (CompletionCode::Success, 0);
+
+        let transfer_event = EventTrb::new_transfer_event_trb(
+            trb.address,
+            residual_bytes,
+            completion_code,
+            false,
+            worker_info.endpoint_id,
+            worker_info.slot_id,
         );
-        if self.endpoints[endpoint_id as usize - 2].is_some() {
-            // endpoint is already enabled.
-            //
-            // The Linux kernel configures and directly afterwards reconfigures
-            // the endpoints (probably due to a very generic configuration
-            // implementation), triggering multiple `enable_endpoint` calls.
-            return;
-        }
+        // Mutex lock unwrap fails only if other threads panicked while holding
+        // the lock. In that case it is reasonable we also panic.
+        worker_info
+            .event_ring
+            .lock()
+            .unwrap()
+            .enqueue(&transfer_event);
+        worker_info.interrupt_line.interrupt();
+        debug!("sent Transfer Event and signaled interrupt");
+    }
+}
 
-        let endpoint_index = endpoint_id / 2;
-        let is_out_endpoint = endpoint_id % 2 == 0;
-        let endpoint = match is_out_endpoint {
-            true => {
-                // unwrap can fail when
-                // - driver asks for invalid endpoint (driver's fault)
-                // - driver switched interfaces to alternate modes, which could
-                //   enable endpoint that we are currently not aware of (TODO)
-                // In both cases, we cannot reasonably continue and want to see
-                // what we encountered, so panicking is the intended behavior.
-                let interface_of_endpoint = &self.interfaces[self
-                    .get_interface_number_containing_endpoint(endpoint_index)
-                    .unwrap()];
-                EndpointWrapper::BulkOut(
-                    interface_of_endpoint
-                        .endpoint::<Bulk, Out>(endpoint_index)
-                        .unwrap(),
-                )
-            }
-            false => {
-                let endpoint_index = 0x80 | endpoint_index;
-                // unwrap can fail when
-                // - driver asks for invalid endpoint (driver's fault)
-                // - driver switched interfaces to alternate modes, which could
-                //   enable endpoint that we are currently not aware of (TODO)
-                // In both cases, we cannot reasonably continue and want to see
-                // what we encountered, so panicking is the intended behavior.
-                let interface_of_endpoint = &self.interfaces[self
-                    .get_interface_number_containing_endpoint(endpoint_index)
-                    .unwrap()];
-                EndpointWrapper::BulkIn(
-                    interface_of_endpoint
-                        .endpoint::<Bulk, In>(endpoint_index)
-                        .unwrap(),
-                )
+// cognitive complexity required because of the high cost of trace! messages
+#[allow(clippy::cognitive_complexity)]
+fn transfer_out_worker(
+    mut endpoint: nusb::Endpoint<Bulk, Out>,
+    worker_info: EndpointWorkerInfo,
+    wakeup: Receiver<()>,
+) {
+    loop {
+        let trb = match worker_info.transfer_ring.next_transfer_trb() {
+            Some(trb) => trb,
+            None => {
+                trace!(
+                    "worker thread ep {}: No TRB on transfer ring, going to sleep",
+                    worker_info.endpoint_id
+                );
+                // We currently assume that the main thread always keeps the
+                // channel open, so unwrap is safe.
+                wakeup.recv().unwrap();
+                trace!(
+                    "worker thread ep {}: Received wake up",
+                    worker_info.endpoint_id
+                );
+                continue;
             }
         };
-        self.endpoints[endpoint_id as usize - 2] = Some(endpoint);
-        debug!("enabled EP{} on real device", endpoint_id);
+        assert!(
+            matches!(trb.variant, TransferTrbVariant::Normal(_)),
+            "Expected Normal TRB but got {:?}",
+            trb
+        );
+
+        // The assertion above guarantees that the TRB is a normal TRB. A wrong
+        // TRB type is the only reason the unwrap can fail.
+        let normal_data = extract_normal_trb_data(&trb).unwrap();
+
+        let mut data = vec![0; normal_data.transfer_length as usize];
+        worker_info
+            .dma_bus
+            .read_bulk(normal_data.data_pointer, &mut data);
+        if normal_data.transfer_length == 31 {
+            debug!("OUT data: {:?}", data);
+        }
+        endpoint.submit(data.into());
+        // Timeout indicates device unresponsive - no reasonable recovery possible
+        endpoint
+            .wait_next_complete(Duration::from_millis(800))
+            .unwrap();
+
+        if !normal_data.interrupt_on_completion {
+            trace!("Processed TRB without IOC flag; sending no transfer event");
+            continue;
+        }
+
+        let (completion_code, residual_bytes) = (CompletionCode::Success, 0);
+
+        let transfer_event = EventTrb::new_transfer_event_trb(
+            trb.address,
+            residual_bytes,
+            completion_code,
+            false,
+            worker_info.endpoint_id,
+            worker_info.slot_id,
+        );
+        // Mutex lock unwrap fails only if other threads panicked while holding
+        // the lock. In that case it is reasonable we also panic.
+        worker_info
+            .event_ring
+            .lock()
+            .unwrap()
+            .enqueue(&transfer_event);
+        worker_info.interrupt_line.interrupt();
+        debug!("sent Transfer Event and signaled interrupt");
     }
 }
 

@@ -27,7 +27,7 @@ use super::{
     config_space::BarInfo,
     constants::xhci::{device_slots::endpoint_state, operational::usbsts},
     device_slots::DeviceSlotManager,
-    realdevice::RealDevice,
+    realdevice::{EndpointWorkerInfo, RealDevice},
     registers::PortscRegister,
     rings::{CommandRing, EventRing},
     trb::{
@@ -430,10 +430,18 @@ impl XhciController {
         let enabled_endpoints = device_context.configure_endpoints(data.input_context_pointer);
         // Program requires real USB device for all XHCI operations (pattern used throughout file)
         for (i, ep_type) in enabled_endpoints {
+            let worker_info = EndpointWorkerInfo {
+                slot_id: data.slot_id,
+                endpoint_id: i,
+                transfer_ring: device_context.get_transfer_ring(i as u64),
+                dma_bus: self.dma_bus.clone(),
+                event_ring: self.event_ring.clone(),
+                interrupt_line: self.interrupt_line.clone(),
+            };
             self.real_device
                 .as_mut()
                 .unwrap()
-                .enable_endpoint(i, ep_type);
+                .enable_endpoint(worker_info, ep_type);
         }
     }
 
@@ -448,8 +456,14 @@ impl XhciController {
         match value {
             ep if ep == 0 || ep > 31 => panic!("invalid value {} on doorbell write", ep),
             1 => self.check_control_endpoint(slot_id),
-            ep if ep % 2 == 0 => self.check_out_endpoint(slot_id, ep as u8),
-            ep => self.check_in_endpoint(slot_id, ep as u8),
+            ep => {
+                // When the driver rings the doorbell with a non-control
+                // endpoint id, a lot must have happened before (e.g., descriptor
+                // reads on the control endpoint), so we never reach this point
+                // when no device is available (expect for an invalid doorbell
+                // write, in which case panicking is the right thing to do.
+                self.real_device.as_mut().unwrap().transfer(ep as u8);
+            }
         };
     }
 
@@ -505,62 +519,6 @@ impl XhciController {
         self.event_ring.lock().unwrap().enqueue(&trb);
         self.interrupt_line.interrupt();
         debug!("sent Transfer Event and signaled interrupt");
-    }
-
-    fn check_out_endpoint(&mut self, slot: u8, ep: u8) {
-        let transfer_ring = self
-            .device_slot_manager
-            .get_device_context(slot)
-            .get_transfer_ring(ep as u64);
-
-        while let Some(trb) = transfer_ring.next_transfer_trb() {
-            debug!("TRB on endpoint {} (OUT): {:?}", ep, trb);
-            let (completion_code, residual_bytes) = self
-                .real_device
-                .as_mut()
-                .unwrap()
-                .transfer_out(ep, &trb, &self.dma_bus);
-            // send transfer event
-            let trb = EventTrb::new_transfer_event_trb(
-                trb.address,
-                residual_bytes,
-                completion_code,
-                false,
-                ep,
-                slot,
-            );
-            self.event_ring.lock().unwrap().enqueue(&trb);
-            self.interrupt_line.interrupt();
-            debug!("sent Transfer Event and signaled interrupt");
-        }
-    }
-
-    fn check_in_endpoint(&mut self, slot: u8, ep: u8) {
-        let transfer_ring = self
-            .device_slot_manager
-            .get_device_context(slot)
-            .get_transfer_ring(ep as u64);
-
-        while let Some(trb) = transfer_ring.next_transfer_trb() {
-            debug!("TRB on endpoint {} (IN): {:?}", ep, trb);
-            let (completion_code, residual_bytes) =
-                self.real_device
-                    .as_mut()
-                    .unwrap()
-                    .transfer_in(ep, &trb, &self.dma_bus);
-            // send transfer event
-            let transfer_event = EventTrb::new_transfer_event_trb(
-                trb.address,
-                residual_bytes,
-                completion_code,
-                false,
-                ep,
-                slot,
-            );
-            self.event_ring.lock().unwrap().enqueue(&transfer_event);
-            self.interrupt_line.interrupt();
-            debug!("sent Transfer Event and signaled interrupt");
-        }
     }
 }
 
