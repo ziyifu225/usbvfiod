@@ -372,7 +372,7 @@ impl XhciController {
                 )
             }
             CommandTrbVariant::SetTrDequeuePointer => todo!(),
-            CommandTrbVariant::ResetDevice => {
+            CommandTrbVariant::ResetDevice(data) => {
                 // TODO this command probably requires more handling. The guest
                 // driver will attempt resets when descriptors do not match what
                 // the virtual port announces.
@@ -383,7 +383,7 @@ impl XhciController {
                     cmd.address,
                     0,
                     CompletionCode::Success,
-                    1,
+                    data.slot_id,
                 )
             }
             CommandTrbVariant::ForceHeader => todo!(),
