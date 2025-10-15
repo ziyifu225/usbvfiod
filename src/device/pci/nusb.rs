@@ -408,9 +408,7 @@ fn transfer_out_worker(
         }
         endpoint.submit(data.into());
         // Timeout indicates device unresponsive - no reasonable recovery possible
-        endpoint
-            .wait_next_complete(Duration::from_millis(800))
-            .unwrap();
+        endpoint.wait_next_complete(Duration::MAX).unwrap();
 
         if !normal_data.interrupt_on_completion {
             trace!("Processed TRB without IOC flag; sending no transfer event");
