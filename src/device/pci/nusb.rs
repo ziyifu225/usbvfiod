@@ -195,6 +195,14 @@ impl RealDevice for NusbDeviceWrapper {
 
         let endpoint_index = endpoint_id / 2;
         let is_out_endpoint = endpoint_id % 2 == 0;
+        let name = format!(
+            "worker Slot {} Endpoint {} (EP{} {}, {:?})",
+            worker_info.slot_id,
+            endpoint_id,
+            endpoint_index,
+            if is_out_endpoint { "OUT" } else { "IN" },
+            endpoint_type,
+        );
         let endpoint_sender = match is_out_endpoint {
             true => {
                 // unwrap can fail when
@@ -210,7 +218,10 @@ impl RealDevice for NusbDeviceWrapper {
                     .endpoint::<Bulk, Out>(endpoint_index)
                     .unwrap();
                 let (sender, receiver) = mpsc::channel();
-                thread::spawn(move || transfer_out_worker(endpoint, worker_info, receiver));
+                thread::Builder::new()
+                    .name(name.clone())
+                    .spawn(move || transfer_out_worker(endpoint, worker_info, receiver))
+                    .unwrap_or_else(|_| panic!("Failed to launch endpoint worker thread {name}"));
                 sender
             }
             false => {
@@ -230,17 +241,27 @@ impl RealDevice for NusbDeviceWrapper {
                         let endpoint = interface_of_endpoint
                             .endpoint::<Bulk, In>(endpoint_index)
                             .unwrap();
-                        thread::spawn(move || {
-                            transfer_in_worker::<Bulk>(endpoint, worker_info, receiver)
-                        });
+                        thread::Builder::new()
+                            .name(name.clone())
+                            .spawn(move || {
+                                transfer_in_worker::<Bulk>(endpoint, worker_info, receiver)
+                            })
+                            .unwrap_or_else(|_| {
+                                panic!("Failed to launch endpoint worker thread {name}")
+                            });
                     }
                     EndpointType::InterruptIn => {
                         let endpoint = interface_of_endpoint
                             .endpoint::<Interrupt, In>(endpoint_index)
                             .unwrap();
-                        thread::spawn(move || {
-                            transfer_in_worker::<Interrupt>(endpoint, worker_info, receiver)
-                        });
+                        thread::Builder::new()
+                            .name(name.clone())
+                            .spawn(move || {
+                                transfer_in_worker::<Interrupt>(endpoint, worker_info, receiver)
+                            })
+                            .unwrap_or_else(|_| {
+                                panic!("Failed to launch endpoint worker thread {name}")
+                            });
                     }
                     _ => {
                         panic!(
