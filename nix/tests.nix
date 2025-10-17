@@ -12,11 +12,6 @@ let
       ({ config, ... }: {
 
         boot.kernelParams = [
-          # Use the serial console for kernel output.
-          #
-          # The virtio-console is an option as well, but is not
-          # compiled into the NixOS kernel and would be inconvenient.
-          "console=ttyS0"
           # Enable dyndbg messages for the XHCI driver.
           "xhci_pci.dyndbg==pmfl"
           "xhci_hcd.dyndbg==pmfl"
@@ -25,43 +20,8 @@ let
         # Enable debug verbosity.
         boot.consoleLogLevel = 8;
 
-        # allow disk access for users
-        users.users.nixos.extraGroups = [ "disk" ];
-
         # Convenience packages for interactive use
         environment.systemPackages = with pkgs; [ pciutils usbutils ];
-
-        # Add user services that run on automatic login.
-        systemd.user.services = {
-          diagnostic-tests = {
-            description = "Run diagnostic tests";
-            wantedBy = [ "default.target" ];
-
-            serviceConfig = {
-              ExecStart = pkgs.writeShellScript "diagnostic-tests" ''
-                echo Running Diagnostics
-                cat /proc/interrupts
-                echo " "
-                ${pkgs.usbutils}/bin/lsusb
-                ${pkgs.util-linux}/bin/sfdisk -l
-                echo " "
-                echo ',,L' | /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/sfdisk --label=gpt /dev/sda
-                echo " "
-                /run/wrappers/bin/sudo ${pkgs.e2fsprogs}/bin/mkfs.ext4 /dev/sda1 && echo "Successfully created a new ext4 filesystem on the blockdevice."
-                echo " "
-                /run/wrappers/bin/sudo ${pkgs.coreutils}/bin/mkdir -p /mnt
-                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/mount -o X-mount.owner=nixos /dev/sda1 /mnt
-                echo " "
-                echo "This is a new partition with ext4 filesystem." > /mnt/file.txt
-                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/umount /mnt
-                /run/wrappers/bin/sudo ${pkgs.util-linux}/bin/mount -o X-mount.owner=nixos /dev/sda1 /mnt
-                cat /mnt/file.txt
-              '';
-              StandardOutput = "journal+console";
-              StandardError = "journal+console";
-            };
-          };
-        };
 
         # network configuration for interactive debugging
         networking.interfaces."ens1" = {
@@ -114,14 +74,12 @@ let
   # good choice for a production setup, but for this test it works
   # well.
   usbvfiodSocket = "/tmp/usbvfio";
-  cloudHypervisorLog = "/tmp/chv.log";
   vendorId = "46f4";
   productId = "0001";
 
   # Provide a raw file as usb stick test image.
   blockDeviceFile = "/tmp/image.img";
   blockDeviceSize = "8M";
-
 in
 {
   integration-smoke = pkgs.nixosTest {
@@ -167,7 +125,7 @@ in
             Restart = "on-failure";
             RestartSec = "2s";
             ExecStart = ''
-              ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off --serial file=${cloudHypervisorLog} \
+              ${lib.getExe pkgs.cloud-hypervisor} --memory size=2G,shared=on --console off \
                 --kernel ${netboot.kernel} \
                 --cmdline ${lib.escapeShellArg netboot.cmdline} \
                 --initramfs ${netboot.initrd} \
@@ -207,31 +165,92 @@ in
     # The nested CI runs are really slow.
     globalTimeout = 3600;
     testScript = ''
+      import re
       import os
-      print("Creating file image at ${blockDeviceFile}")
-      os.system("rm ${blockDeviceFile}")
-      os.system("dd bs=1  count=1 seek=${blockDeviceSize} if=/dev/zero of=${blockDeviceFile}")
+      from test_driver.errors import RequestedAssertionFailed
 
+      class Nested():
+        """Extending Nix Test Framework to enable using known functions on a nested VM.
+        Commands are executed over ssh.
+        Heavily inspired by nixos-tests (https://nixos.org/manual/nixos/stable/index.html#ssec-machine-objects) and their implementation.
+        """
+        def __init__(self, vm_host: Machine) -> None:
+          self.vm_host = vm_host
+
+        def succeed(self, *commands: str, timeout: int | None = None) -> str:
+          vm_host = self.vm_host
+          output = ""
+          for command in commands:
+              with vm_host.nested(f"must succeed: {command}"):
+                  (status, out) = vm_host.execute("ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 '" + command + "'", timeout=timeout)
+                  if status != 0:
+                      vm_host.log(f"output: {out}")
+                      raise RequestedAssertionFailed(
+                          f"command `{command}` failed (exit code {status})"
+                      )
+                  output += out
+          return output        
+
+        def wait_until_succeeds(self, command: str, timeout: int = 900):
+          vm_host = self.vm_host
+          output = ""
+
+          def check_success(_last_try: bool) -> bool:
+            nonlocal output
+            status, output = vm_host.execute("ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 '" + command + "'", timeout=timeout)
+            return status == 0
+
+          with vm_host.nested(f"waiting for success in cloud-hypervisor: {command}"):
+            retry(check_success, timeout)
+            return(output)
+
+      def search(pattern: str, string: str):
+        if re.search(pattern, string):
+          return
+        else:
+          raise RequestedAssertionFailed(
+            f"pattern `{pattern}` not found in {string}"
+          )
+      
+      # only relevant for interactive testing when `dd seek=` will not reset the image file by overwriting
+      os.system("rm ${blockDeviceFile}")
+
+      print("Creating file image at ${blockDeviceFile}")
+      os.system("dd bs=1  count=1 seek=${blockDeviceSize} if=/dev/zero of=${blockDeviceFile}")
+      
       start_all()
 
       machine.wait_for_unit("cloud-hypervisor.service")
 
-      # Check whether the USB controller pops up.
-      machine.wait_until_succeeds("grep -Fq 'usb usb1: Product: xHCI Host Controller' ${cloudHypervisorLog}", timeout=3000)
-      machine.wait_until_succeeds("grep -Eq 'hub 1-0:1\\.0: [0-9]+ ports? detected' ${cloudHypervisorLog}")
+      # check sshd in systemd.services.cloud-hypervisor is usable prior to testing over ssh
+      machine.wait_until_succeeds("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@192.168.100.2 'exit 0'", timeout=3000)
 
-      # Read the diagnostic information after login.
-      machine.wait_until_succeeds("grep -Eq '\s+[1-9][0-9]*\s+PCI-MSIX.*xhci_hcd' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'ID ${vendorId}:${productId} QEMU QEMU USB HARDDRIVE' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'Disk /dev/sda:' ${cloudHypervisorLog}")
+      cloud_hypervisor = Nested(vm_host=machine)
 
-      # Confirm the partition creation was successful.
-      machine.wait_until_succeeds("grep -q 'Disklabel type: gpt' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -Eq '/dev/sda1 .* Linux filesystem' ${cloudHypervisorLog}")
+      # Confirm USB controller pops up in boot logs
+      out = cloud_hypervisor.succeed("journalctl -b")
+      search("usb usb1: Product: xHCI Host Controller", out)
+      search("hub 1-0:1\\.0: [0-9]+ ports? detected", out)
 
-      # Confirm the filesystem is functional.
-      machine.wait_until_succeeds("grep -q 'Successfully created a new ext4 filesystem on the blockdevice.' ${cloudHypervisorLog}")
-      machine.wait_until_succeeds("grep -q 'This is a new partition with ext4 filesystem.' ${cloudHypervisorLog}")
+      # Confirm some diagnostic information
+      out = cloud_hypervisor.succeed("cat /proc/interrupts")
+      search(" +[1-9][0-9]* +PCI-MSIX.*xhci_hcd", out)
+      out = cloud_hypervisor.succeed("lsusb")
+      search("ID ${vendorId}:${productId} QEMU QEMU USB HARDDRIVE", out)
+      out = cloud_hypervisor.succeed("sfdisk -l")
+      search("Disk /dev/sda:", out)
+      
+      # Test partitioning
+      cloud_hypervisor.succeed("echo ',,L' | sfdisk --label=gpt /dev/sda")
+      
+      # Test filesystem
+      cloud_hypervisor.succeed("mkfs.ext4 /dev/sda1")
+      cloud_hypervisor.succeed("mount /dev/sda1 /mnt")
+      cloud_hypervisor.succeed("echo 123TEST123 > /mnt/file.txt")
+      cloud_hypervisor.succeed("umount /mnt")
+      cloud_hypervisor.succeed("mount /dev/sda1 /mnt")
+      out = cloud_hypervisor.succeed("cat /mnt/file.txt")
+      search("123TEST123", out)
     '';
   };
 }
