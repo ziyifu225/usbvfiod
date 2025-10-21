@@ -236,9 +236,8 @@ let
     out = cloud_hypervisor.succeed("cat /mnt/file.txt")
     search("123TEST123", out)
   '';
-in
-{
-  integration-smoke = pkgs.nixosTest {
+
+  make-smoke-test = qemu-device: pkgs.nixosTest {
     name = "usbvfiod Smoke Test";
 
     inherit testScript globalTimeout;
@@ -250,34 +249,19 @@ in
         cores = 2;
         memorySize = 4096;
         qemu.options = [
-          # A virtual USB XHCI controller in the host ...
-          "-device qemu-xhci,id=host-xhci,addr=10"
+          # A virtual USB controller in the host ...
+          "-device ${qemu-device},id=usbcontroller,addr=10"
           # ... with an attached usb stick.
           "-drive if=none,id=usbstick,format=raw,file=${blockDeviceFile}"
-          "-device usb-storage,bus=host-xhci.0,drive=usbstick"
+          "-device usb-storage,bus=usbcontroller.0,drive=usbstick"
         ];
       };
     };
   };
-  integration-smoke-usb-2 = pkgs.nixosTest {
-    name = "usbvfiod Smoke Test with emulated ehci (usb 2.0)";
 
-    inherit testScript globalTimeout;
+in
+{
+  integration-smoke = make-smoke-test "qemu-xhci";
 
-    nodes.machine = { ... }: {
-      imports = [ machineConfiguration ];
-
-      virtualisation = {
-        cores = 2;
-        memorySize = 4096;
-        qemu.options = [
-          # A virtual USB EHCI controller in the host ...
-          "-device usb-ehci,id=host-ehci,addr=10"
-          # ... with an attached usb stick.
-          "-drive if=none,id=usbstick,format=raw,file=${blockDeviceFile}"
-          "-device usb-storage,bus=host-ehci.0,drive=usbstick"
-        ];
-      };
-    };
-  };
+  integration-smoke-usb-2 = make-smoke-test "usb-ehci";
 }
