@@ -80,12 +80,11 @@ let
   # Provide a raw file as usb stick test image.
   blockDeviceFile = "/tmp/image.img";
   blockDeviceSize = "8M";
-in
-{
-  integration-smoke = pkgs.nixosTest {
-    name = "usbvfiod Smoke Test";
 
-    nodes.machine = { pkgs, ... }: {
+  make-smoke-test = qemu-device: pkgs.nixosTest {
+    name = "usbvfiod Smoke Test with ${qemu-device}";
+
+    nodes.machine = _: {
       environment.systemPackages = with pkgs; [
         jq
         usbutils
@@ -153,11 +152,11 @@ in
         cores = 2;
         memorySize = 4096;
         qemu.options = [
-          # A virtual USB XHCI controller in the host ...
-          "-device qemu-xhci,id=host-xhci,addr=10"
+          # A virtual USB controller in the host ...
+          "-device ${qemu-device},id=usbcontroller,addr=10"
           # ... with an attached usb stick.
           "-drive if=none,id=usbstick,format=raw,file=${blockDeviceFile}"
-          "-device usb-storage,bus=host-xhci.0,drive=usbstick"
+          "-device usb-storage,bus=usbcontroller.0,drive=usbstick"
         ];
       };
     };
@@ -253,4 +252,9 @@ in
       search("123TEST123", out)
     '';
   };
+in
+{
+  integration-smoke = make-smoke-test "qemu-xhci";
+
+  integration-smoke-usb-2 = make-smoke-test "usb-ehci";
 }
