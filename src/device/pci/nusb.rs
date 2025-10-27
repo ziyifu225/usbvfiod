@@ -65,10 +65,27 @@ impl NusbDeviceWrapper {
         }
     }
 
+    fn extract_recipient_and_type(request_type: u8) -> (Recipient, ControlType) {
+        let recipient = match request_type & 0x1f {
+            0 => Recipient::Device,
+            1 => Recipient::Interface,
+            2 => Recipient::Endpoint,
+            val => panic!("invalid recipient {}", val),
+        };
+        let control_type = match (request_type >> 5) & 0x3 {
+            0 => ControlType::Standard,
+            1 => ControlType::Class,
+            2 => ControlType::Vendor,
+            val => panic!("invalid type {}", val),
+        };
+        (recipient, control_type)
+    }
+
     fn control_transfer_device_to_host(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
+        let (recipient, control_type) = Self::extract_recipient_and_type(request.request_type);
         let control = ControlIn {
-            control_type: ControlType::Standard,
-            recipient: Recipient::Device,
+            control_type,
+            recipient,
             request: request.request,
             value: request.value,
             index: request.index,
@@ -106,9 +123,10 @@ impl NusbDeviceWrapper {
             dma_bus.read_bulk(addr, &mut data);
             data
         });
+        let (recipient, control_type) = Self::extract_recipient_and_type(request.request_type);
         let control = ControlOut {
-            control_type: ControlType::Standard,
-            recipient: Recipient::Device,
+            control_type,
+            recipient,
             request: request.request,
             value: request.value,
             index: request.index,
