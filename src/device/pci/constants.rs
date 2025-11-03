@@ -261,14 +261,9 @@ pub mod xhci {
         pub const PORT_STRIDE: u64 = 0x10;
 
         /// USB3 Port 1 base address - each port uses PORT_STRIDE bytes: PORTSC(+0x0), PORTPMSC(+0x4), PORTLI(+0x8)
-        pub const PORTSC_USB3: u64 = super::OP_BASE + 0x400; /* +(PORT_STRIDE * (portnr-1)) */
-        pub const PORTPMSC_USB3: u64 = super::OP_BASE + 0x404;
-        pub const PORTLI_USB3: u64 = super::OP_BASE + 0x408;
-
-        /// USB2 port comes after all USB3 ports (NUM_USB3_PORTS * PORT_STRIDE bytes later)
-        pub const PORTSC_USB2: u64 = super::OP_BASE + 0x400 + (super::NUM_USB3_PORTS * PORT_STRIDE);
-        pub const PORTPMSC_USB2: u64 = PORTSC_USB2 + 0x4;
-        pub const PORTLI_USB2: u64 = PORTSC_USB2 + 0x8;
+        pub const PORTSC: u64 = super::OP_BASE + 0x400; /* +(PORT_STRIDE * (portnr-1)) */
+        pub const PORTPMSC: u64 = super::OP_BASE + 0x404;
+        pub const PORTLI: u64 = super::OP_BASE + 0x408;
 
         /// Runtime Register Offsets
         pub const MFINDEX: u64 = super::RUN_BASE;

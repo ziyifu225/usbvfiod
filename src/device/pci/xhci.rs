@@ -241,11 +241,11 @@ impl XhciController {
     }
 
     const fn get_portsc_index(&self, addr: u64) -> Option<usize> {
-        Self::get_port_index_from_addr(addr, offset::PORTSC_USB3, MAX_PORTS, 0)
+        Self::get_port_index_from_addr(addr, offset::PORTSC, MAX_PORTS, 0)
     }
 
     const fn get_portli_index(&self, addr: u64) -> Option<usize> {
-        Self::get_port_index_from_addr(addr, offset::PORTSC_USB3, MAX_PORTS, 0x8)
+        Self::get_port_index_from_addr(addr, offset::PORTSC, MAX_PORTS, 0x8)
     }
 
     fn write_portsc(&mut self, port_index: usize, value: u64) {
