@@ -44,6 +44,12 @@ pub struct Cli {
     /// See the documentation for how to identify devices.
     #[arg(long = "device", value_name = "PATH")]
     pub devices: Vec<PathBuf>,
+
+    /// Write all captured USB traffic into a PCAP file inside this
+    /// directory. The file will be created when the first packet is
+    /// logged. Omit this option to disable PCAP logging.
+    #[arg(long = "pcap-dir", value_name = "DIR")]
+    pub pcap_dir: Option<PathBuf>,
 }
 
 /// The location of the server socket for the vfio-user client connection.
