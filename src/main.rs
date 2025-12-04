@@ -24,8 +24,12 @@ use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 use vfio_user::Server;
 
+use crate::device::pci::usb_pcap::UsbPcapManager;
+
 fn main() -> Result<()> {
     let args = Cli::parse();
+
+    UsbPcapManager::init(args.pcap_dir.clone());
 
     let subscriber = FmtSubscriber::builder()
         .with_max_level(match args.verbose {

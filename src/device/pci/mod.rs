@@ -13,5 +13,6 @@ pub mod registers;
 pub mod rings;
 pub mod traits;
 pub mod trb;
+pub mod usb_pcap;
 pub mod usbrequest;
 pub mod xhci;
