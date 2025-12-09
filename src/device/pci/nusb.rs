@@ -7,6 +7,7 @@ use tracing::{debug, trace, warn};
 
 use crate::device::bus::BusDeviceRef;
 use crate::device::pci::trb::{CompletionCode, EventTrb};
+use crate::device::pci::usb_pcap::{log_control_completion, log_control_submission, UsbDirection};
 
 use super::realdevice::{EndpointType, EndpointWorkerInfo, Speed};
 use super::trb::{NormalTrbData, TransferTrb, TransferTrbVariant};
@@ -24,6 +25,7 @@ pub struct NusbDeviceWrapper {
     device: nusb::Device,
     interfaces: Vec<nusb::Interface>,
     endpoints: [Option<Sender<()>>; 30],
+    bus_number: u16,
 }
 
 impl Debug for NusbDeviceWrapper {
@@ -32,12 +34,13 @@ impl Debug for NusbDeviceWrapper {
         // for unconfigured devices. There is no I/O for this.
         f.debug_struct("NusbDeviceWrapper")
             .field("device", &self.device.active_configuration())
+            .field("bus_number", &self.bus_number)
             .finish()
     }
 }
 
 impl NusbDeviceWrapper {
-    pub fn new(device: nusb::Device) -> Self {
+    pub fn new(device: nusb::Device, bus_number: u16) -> Self {
         // Claim all interfaces
         let mut interfaces = vec![];
         // when we cannot get the active configuration, i.e., not properly talk
@@ -62,6 +65,7 @@ impl NusbDeviceWrapper {
             device,
             interfaces,
             endpoints: std::array::from_fn(|_| None),
+            bus_number,
         }
     }
 
@@ -81,7 +85,12 @@ impl NusbDeviceWrapper {
         (recipient, control_type)
     }
 
-    fn control_transfer_device_to_host(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
+    fn control_transfer_device_to_host(
+        &self,
+        slot_id: u8,
+        request: &UsbRequest,
+        dma_bus: &BusDeviceRef,
+    ) {
         let (recipient, control_type) = Self::extract_recipient_and_type(request.request_type);
         let control = ControlIn {
             control_type,
@@ -91,22 +100,39 @@ impl NusbDeviceWrapper {
             index: request.index,
             length: request.length,
         };
+        log_control_submission(
+            slot_id,
+            self.bus_number,
+            request,
+            UsbDirection::DeviceToHost,
+            &[],
+        );
 
         debug!("sending control in request to device");
-        let data = match self
+        let (data, status) = match self
             .device
             .control_in(control, Duration::from_millis(200))
             .wait()
         {
             Ok(data) => {
                 debug!("control in data {:?}", data);
-                data
+                (data, 0)
             }
             Err(error) => {
                 warn!("control in request failed: {:?}", error);
-                vec![0; 0]
+                (Vec::new(), -1)
             }
         };
+
+        log_control_completion(
+            request.address,
+            slot_id,
+            self.bus_number,
+            UsbDirection::DeviceToHost,
+            status,
+            data.len() as u32,
+            &data,
+        );
 
         // TODO: ideally the control transfer targets the right location for us and we get rid
         // of the additional DMA write here.
@@ -117,7 +143,12 @@ impl NusbDeviceWrapper {
         fence(Ordering::Release);
     }
 
-    fn control_transfer_host_to_device(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
+    fn control_transfer_host_to_device(
+        &self,
+        slot_id: u8,
+        request: &UsbRequest,
+        dma_bus: &BusDeviceRef,
+    ) {
         let data = request.data.map_or_else(Vec::new, |addr| {
             let mut data = vec![0; request.length as usize];
             dma_bus.read_bulk(addr, &mut data);
@@ -132,16 +163,39 @@ impl NusbDeviceWrapper {
             index: request.index,
             data: &data,
         };
+        log_control_submission(
+            slot_id,
+            self.bus_number,
+            request,
+            UsbDirection::HostToDevice,
+            &data,
+        );
 
         debug!("sending control out request to device");
-        match self
+        let status = match self
             .device
             .control_out(control, Duration::from_millis(200))
             .wait()
         {
-            Ok(_) => debug!("control out success"),
-            Err(error) => warn!("control out request failed: {:?}", error),
-        }
+            Ok(_) => {
+                debug!("control out success");
+                0
+            }
+            Err(error) => {
+                warn!("control out request failed: {:?}", error);
+                -1
+            }
+        };
+
+        log_control_completion(
+            request.address,
+            slot_id,
+            self.bus_number,
+            UsbDirection::HostToDevice,
+            status,
+            u32::from(request.length),
+            &[],
+        );
     }
 
     fn get_interface_number_containing_endpoint(&self, endpoint_id: u8) -> Option<usize> {
@@ -173,11 +227,11 @@ impl RealDevice for NusbDeviceWrapper {
         self.device.speed().map(|speed| speed.into())
     }
 
-    fn control_transfer(&self, request: &UsbRequest, dma_bus: &BusDeviceRef) {
+    fn control_transfer(&self, slot_id: u8, request: &UsbRequest, dma_bus: &BusDeviceRef) {
         let direction = request.request_type & 0x80 != 0;
         match direction {
-            true => self.control_transfer_device_to_host(request, dma_bus),
-            false => self.control_transfer_host_to_device(request, dma_bus),
+            true => self.control_transfer_device_to_host(slot_id, request, dma_bus),
+            false => self.control_transfer_host_to_device(slot_id, request, dma_bus),
         }
     }
 

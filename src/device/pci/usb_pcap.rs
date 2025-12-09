@@ -3,11 +3,60 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::device::pci::usbrequest::UsbRequest;
 use tracing::warn;
 
 const LINKTYPE_USB_LINUX: u32 = 189;
 const PCAP_MAGIC: u32 = 0xa1b2c3d4;
 const SNAPLEN: u32 = 65_535;
+pub const DEFAULT_BUS_NUMBER: u16 = 1;
+
+#[derive(Clone, Copy)]
+pub enum UsbEventType {
+    Submission,
+    Completion,
+}
+
+impl UsbEventType {
+    fn code(self) -> u8 {
+        match self {
+            UsbEventType::Submission => b'S',
+            UsbEventType::Completion => b'C',
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum UsbTransferType {
+    Control,
+    Bulk,
+    Interrupt,
+}
+
+impl UsbTransferType {
+    fn code(self) -> u8 {
+        match self {
+            UsbTransferType::Control => 2,
+            UsbTransferType::Bulk => 3,
+            UsbTransferType::Interrupt => 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum UsbDirection {
+    HostToDevice,
+    DeviceToHost,
+}
+
+impl UsbDirection {
+    fn endpoint_address(self, endpoint: u8) -> u8 {
+        match self {
+            UsbDirection::HostToDevice => endpoint & 0x7f,
+            UsbDirection::DeviceToHost => endpoint | 0x80,
+        }
+    }
+}
 
 /// Timestamp of a packet in seconds and microseconds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -28,7 +77,7 @@ impl From<std::time::SystemTime> for Timestamp {
     }
 }
 
-pub struct UsbPacketMeta {
+pub struct UsbPacketLinktypeHeader {
     pub id: u64,
     pub event_type: u8,
     pub transfer_type: u8,
@@ -43,7 +92,7 @@ pub struct UsbPacketMeta {
     pub setup: [u8; 8],
 }
 
-impl UsbPacketMeta {
+impl UsbPacketLinktypeHeader {
     pub fn header_bytes(&self, timestamp: Timestamp) -> [u8; 48] {
         let mut header = [0u8; 48];
         header[0..8].copy_from_slice(&self.id.to_le_bytes());
@@ -64,11 +113,11 @@ impl UsbPacketMeta {
     }
 }
 
-struct PcapWriter {
+struct PcapFileWriter {
     writer: Mutex<BufWriter<File>>,
 }
 
-impl PcapWriter {
+impl PcapFileWriter {
     fn new(file: File) -> std::io::Result<Self> {
         let mut writer = BufWriter::new(file);
         writer.write_all(&PCAP_MAGIC.to_le_bytes())?;
@@ -78,6 +127,7 @@ impl PcapWriter {
         writer.write_all(&0u32.to_le_bytes())?;
         writer.write_all(&SNAPLEN.to_le_bytes())?;
         writer.write_all(&LINKTYPE_USB_LINUX.to_le_bytes())?;
+        writer.flush()?;
         Ok(Self {
             writer: Mutex::new(writer),
         })
@@ -86,7 +136,7 @@ impl PcapWriter {
     fn write_packet(
         &self,
         timestamp: Timestamp,
-        meta: &UsbPacketMeta,
+        meta: &UsbPacketLinktypeHeader,
         payload: &[u8],
     ) -> std::io::Result<()> {
         let header = meta.header_bytes(timestamp);
@@ -98,26 +148,27 @@ impl PcapWriter {
         writer.write_all(&incl_len.to_le_bytes())?;
         writer.write_all(&header)?;
         writer.write_all(payload)?;
+        writer.flush()?;
         Ok(())
     }
 }
 
 struct UsbPcapManagerState {
     dir: Option<PathBuf>,
-    writer: Option<Arc<PcapWriter>>,
+    writer: Option<Arc<PcapFileWriter>>,
     warned: bool,
 }
 
 impl UsbPcapManagerState {
-    fn new(dir: Option<PathBuf>) -> Self {
+    fn new(path: Option<PathBuf>) -> Self {
         Self {
-            dir,
+            dir: path,
             writer: None,
             warned: false,
         }
     }
 
-    fn ensure_writer(&mut self) -> Option<Arc<PcapWriter>> {
+    fn ensure_writer(&mut self) -> Option<Arc<PcapFileWriter>> {
         let file_path = self.dir.clone()?;
 
         if self.writer.is_some() {
@@ -139,7 +190,7 @@ impl UsbPcapManagerState {
             }
         }
 
-        let writer = match File::create(&file_path).and_then(PcapWriter::new) {
+        let writer = match File::create(&file_path).and_then(PcapFileWriter::new) {
             Ok(writer) => Arc::new(writer),
             Err(error) => {
                 if !self.warned {
@@ -166,18 +217,102 @@ pub struct UsbPcapManager;
 
 impl UsbPcapManager {
     pub fn init(path: Option<PathBuf>) {
-        *MANAGER.lock().unwrap() = path.map(UsbPcapManagerState::new);
+        *MANAGER.lock().unwrap() = Some(UsbPcapManagerState::new(path));
     }
 
-    pub fn write(meta: &UsbPacketMeta, payload: &[u8]) {
+    pub fn write(meta: &UsbPacketLinktypeHeader, payload: &[u8]) {
         let mut guard = MANAGER.lock().unwrap();
-        let writer = guard
-            .as_mut()
-            .and_then(UsbPcapManagerState::ensure_writer)?;
+        let writer = match guard.as_mut().and_then(UsbPcapManagerState::ensure_writer) {
+            Some(writer) => writer,
+            None => return,
+        };
 
         let timestamp = Timestamp::from(std::time::SystemTime::now());
         if let Err(error) = writer.write_packet(timestamp, meta, payload) {
             warn!("Failed to write USB PCAP packet: {}", error);
         }
     }
+}
+
+fn build_setup_bytes(request: &UsbRequest) -> [u8; 8] {
+    [
+        request.request_type,
+        request.request,
+        (request.value & 0x00ff) as u8,
+        (request.value >> 8) as u8,
+        (request.index & 0x00ff) as u8,
+        (request.index >> 8) as u8,
+        (request.length & 0x00ff) as u8,
+        (request.length >> 8) as u8,
+    ]
+}
+
+pub fn log_control_submission(
+    slot_id: u8,
+    bus_number: u16,
+    request: &UsbRequest,
+    direction: UsbDirection,
+    payload: &[u8],
+) {
+    log_control_packet(
+        request.address,
+        slot_id,
+        bus_number,
+        UsbEventType::Submission,
+        direction,
+        0,
+        u32::from(request.length),
+        payload,
+        Some(build_setup_bytes(request)),
+    );
+}
+
+pub fn log_control_completion(
+    request_id: u64,
+    slot_id: u8,
+    bus_number: u16,
+    direction: UsbDirection,
+    status: i32,
+    actual_length: u32,
+    payload: &[u8],
+) {
+    log_control_packet(
+        request_id,
+        slot_id,
+        bus_number,
+        UsbEventType::Completion,
+        direction,
+        status,
+        actual_length,
+        payload,
+        None,
+    );
+}
+
+fn log_control_packet(
+    request_id: u64,
+    slot_id: u8,
+    bus_number: u16,
+    event: UsbEventType,
+    direction: UsbDirection,
+    status: i32,
+    urb_len: u32,
+    payload: &[u8],
+    setup: Option<[u8; 8]>,
+) {
+    let meta = UsbPacketLinktypeHeader {
+        id: request_id,
+        event_type: event.code(),
+        transfer_type: UsbTransferType::Control.code(),
+        endpoint_address: direction.endpoint_address(0),
+        device_address: slot_id,
+        bus_number,
+        setup_flag: setup.is_some() as u8,
+        data_flag: (!payload.is_empty()) as u8,
+        status,
+        urb_len,
+        data_len: payload.len() as u32,
+        setup: setup.unwrap_or([0; 8]),
+    };
+    UsbPcapManager::write(&meta, payload);
 }
