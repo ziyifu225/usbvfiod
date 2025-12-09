@@ -45,10 +45,10 @@ pub struct Cli {
     #[arg(long = "device", value_name = "PATH")]
     pub devices: Vec<PathBuf>,
 
-    /// Write all captured USB traffic into a PCAP file inside this
-    /// directory. The file will be created when the first packet is
-    /// logged. Omit this option to disable PCAP logging.
-    #[arg(long = "pcap-dir", value_name = "DIR")]
+    /// Write all captured USB traffic to this PCAP file. The file
+    /// will be created when the first packet is logged. Omit this
+    /// option to disable PCAP logging.
+    #[arg(long = "pcap-dir", value_name = "PATH")]
     pub pcap_dir: Option<PathBuf>,
 }
 

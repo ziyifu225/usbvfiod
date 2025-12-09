@@ -538,7 +538,7 @@ impl XhciController {
         // If no device is found, the driver won't start device initialization. Therefore,
         // when we reach this control transfer path, we should assume a device is present.
         let device = self.device_by_slot_expect(slot);
-        device.control_transfer(&request, &self.dma_bus);
+        device.control_transfer(slot, &request, &self.dma_bus);
 
         // send transfer event
         let trb = EventTrb::new_transfer_event_trb(

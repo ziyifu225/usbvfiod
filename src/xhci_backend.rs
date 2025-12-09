@@ -21,7 +21,10 @@ use vfio_user::{IrqInfo, ServerBackend};
 use crate::device::{
     bus::{Request, RequestSize},
     interrupt_line::{DummyInterruptLine, InterruptLine},
-    pci::{nusb::NusbDeviceWrapper, traits::PciDevice, xhci::XhciController},
+    pci::{
+        nusb::NusbDeviceWrapper, traits::PciDevice, usb_pcap::DEFAULT_BUS_NUMBER,
+        xhci::XhciController,
+    },
 };
 
 use crate::{dynamic_bus::DynamicBus, memory_segment::MemorySegment};
@@ -80,9 +83,9 @@ impl XhciBackend {
     }
 
     /// Add a USB device to the virtual XHCI controller.
-    fn add_device(&self, device: nusb::Device) -> Result<()> {
+    fn add_device(&self, device: nusb::Device, bus_number: u16) -> Result<()> {
         // Add the device to the XHCI controller.
-        let wrapped_device = Box::new(NusbDeviceWrapper::new(device));
+        let wrapped_device = Box::new(NusbDeviceWrapper::new(device, bus_number));
         self.controller.lock().unwrap().set_device(wrapped_device);
 
         Ok(())
@@ -91,6 +94,7 @@ impl XhciBackend {
     /// Add a USB device via its path in `/dev/bus/usb`.
     pub fn add_device_from_path(&self, path: impl AsRef<Path>) -> Result<()> {
         let path: &Path = path.as_ref();
+        let bus_number = parse_bus_number(path).unwrap_or(DEFAULT_BUS_NUMBER);
         let open_file = |err_msg| {
             std::fs::OpenOptions::new()
                 .read(true)
@@ -106,7 +110,7 @@ impl XhciBackend {
         // After the reset, the device instance is no longer usable and we need
         // to reopen.
         let file = open_file("Failed to open USB device file after device reset")?;
-        self.add_device(nusb::Device::from_fd(file.into()).wait()?)
+        self.add_device(nusb::Device::from_fd(file.into()).wait()?, bus_number)
     }
 }
 
@@ -364,4 +368,8 @@ impl ServerBackend for XhciBackend {
 
         Ok(())
     }
+}
+
+fn parse_bus_number(path: &Path) -> Option<u16> {
+    path.parent()?.file_name()?.to_str()?.parse::<u16>().ok()
 }
