@@ -7,7 +7,10 @@ use tracing::{debug, trace, warn};
 
 use crate::device::bus::BusDeviceRef;
 use crate::device::pci::trb::{CompletionCode, EventTrb};
-use crate::device::pci::usb_pcap::{log_control_completion, log_control_submission, UsbDirection};
+use crate::device::pci::usb_pcap::{
+    log_bulk_completion, log_bulk_submission, log_control_completion, log_control_submission,
+    UsbDirection,
+};
 
 use super::realdevice::{EndpointType, EndpointWorkerInfo, Speed};
 use super::trb::{NormalTrbData, TransferTrb, TransferTrbVariant};
@@ -292,7 +295,10 @@ impl RealDevice for NusbDeviceWrapper {
                 let (sender, receiver) = mpsc::channel();
                 thread::Builder::new()
                     .name(name.clone())
-                    .spawn(move || transfer_out_worker(endpoint, worker_info, receiver))
+                    .spawn({
+                        let bus_number = self.bus_number;
+                        move || transfer_out_worker(endpoint, worker_info, receiver, bus_number)
+                    })
                     .unwrap_or_else(|_| panic!("Failed to launch endpoint worker thread {name}"));
                 sender
             }
@@ -315,8 +321,16 @@ impl RealDevice for NusbDeviceWrapper {
                             .unwrap();
                         thread::Builder::new()
                             .name(name.clone())
-                            .spawn(move || {
-                                transfer_in_worker::<Bulk>(endpoint, worker_info, receiver)
+                            .spawn({
+                                let bus_number = self.bus_number;
+                                move || {
+                                    transfer_in_worker::<Bulk>(
+                                        endpoint,
+                                        worker_info,
+                                        receiver,
+                                        bus_number,
+                                    )
+                                }
                             })
                             .unwrap_or_else(|_| {
                                 panic!("Failed to launch endpoint worker thread {name}")
@@ -328,8 +342,16 @@ impl RealDevice for NusbDeviceWrapper {
                             .unwrap();
                         thread::Builder::new()
                             .name(name.clone())
-                            .spawn(move || {
-                                transfer_in_worker::<Interrupt>(endpoint, worker_info, receiver)
+                            .spawn({
+                                let bus_number = self.bus_number;
+                                move || {
+                                    transfer_in_worker::<Interrupt>(
+                                        endpoint,
+                                        worker_info,
+                                        receiver,
+                                        bus_number,
+                                    )
+                                }
                             })
                             .unwrap_or_else(|_| {
                                 panic!("Failed to launch endpoint worker thread {name}")
@@ -356,6 +378,7 @@ fn transfer_in_worker<EpType: BulkOrInterrupt>(
     mut endpoint: nusb::Endpoint<EpType, In>,
     worker_info: EndpointWorkerInfo,
     wakeup: Receiver<()>,
+    bus_number: u16,
 ) {
     loop {
         let trb = match worker_info.transfer_ring.next_transfer_trb() {
@@ -384,6 +407,15 @@ fn transfer_in_worker<EpType: BulkOrInterrupt>(
         // The assertion above guarantees that the TRB is a normal TRB. A wrong
         // TRB type is the only reason the unwrap can fail.
         let normal_data = extract_normal_trb_data(&trb).unwrap();
+        log_bulk_submission(
+            trb.address,
+            worker_info.slot_id,
+            bus_number,
+            worker_info.endpoint_id,
+            UsbDirection::DeviceToHost,
+            normal_data.transfer_length,
+            &[],
+        );
         let transfer_length = normal_data.transfer_length as usize;
 
         let buffer_size = determine_buffer_size(transfer_length, endpoint.max_packet_size());
@@ -429,6 +461,16 @@ fn transfer_in_worker<EpType: BulkOrInterrupt>(
         worker_info
             .dma_bus
             .write_bulk(normal_data.data_pointer, &buffer.buffer[..byte_count_dma]);
+        log_bulk_completion(
+            trb.address,
+            worker_info.slot_id,
+            bus_number,
+            worker_info.endpoint_id,
+            UsbDirection::DeviceToHost,
+            0,
+            byte_count_dma as u32,
+            &buffer.buffer[..byte_count_dma],
+        );
 
         if !normal_data.interrupt_on_completion {
             trace!("Processed TRB without IOC flag; sending no transfer event");
@@ -463,6 +505,7 @@ fn transfer_out_worker(
     mut endpoint: nusb::Endpoint<Bulk, Out>,
     worker_info: EndpointWorkerInfo,
     wakeup: Receiver<()>,
+    bus_number: u16,
 ) {
     loop {
         let trb = match worker_info.transfer_ring.next_transfer_trb() {
@@ -496,12 +539,28 @@ fn transfer_out_worker(
         worker_info
             .dma_bus
             .read_bulk(normal_data.data_pointer, &mut data);
-        if normal_data.transfer_length == 31 {
-            debug!("OUT data: {:?}", data);
-        }
+        log_bulk_submission(
+            trb.address,
+            worker_info.slot_id,
+            bus_number,
+            worker_info.endpoint_id,
+            UsbDirection::HostToDevice,
+            normal_data.transfer_length,
+            &data,
+        );
         endpoint.submit(data.into());
         // Timeout indicates device unresponsive - no reasonable recovery possible
         endpoint.wait_next_complete(Duration::MAX).unwrap();
+        log_bulk_completion(
+            trb.address,
+            worker_info.slot_id,
+            bus_number,
+            worker_info.endpoint_id,
+            UsbDirection::HostToDevice,
+            0,
+            normal_data.transfer_length,
+            &[],
+        );
 
         if !normal_data.interrupt_on_completion {
             trace!("Processed TRB without IOC flag; sending no transfer event");

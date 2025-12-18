@@ -28,6 +28,7 @@ impl UsbEventType {
 
 #[derive(Clone, Copy)]
 pub enum UsbTransferType {
+    Isochronous,
     Control,
     Bulk,
     Interrupt,
@@ -36,9 +37,10 @@ pub enum UsbTransferType {
 impl UsbTransferType {
     fn code(self) -> u8 {
         match self {
+            UsbTransferType::Isochronous => 0,
+            UsbTransferType::Interrupt => 1,
             UsbTransferType::Control => 2,
             UsbTransferType::Bulk => 3,
-            UsbTransferType::Interrupt => 1,
         }
     }
 }
@@ -254,11 +256,13 @@ pub fn log_control_submission(
     direction: UsbDirection,
     payload: &[u8],
 ) {
-    log_control_packet(
+    log_packet(
         request.address,
         slot_id,
         bus_number,
+        0,
         UsbEventType::Submission,
+        UsbTransferType::Control,
         direction,
         0,
         u32::from(request.length),
@@ -276,11 +280,13 @@ pub fn log_control_completion(
     actual_length: u32,
     payload: &[u8],
 ) {
-    log_control_packet(
+    log_packet(
         request_id,
         slot_id,
         bus_number,
+        0,
         UsbEventType::Completion,
+        UsbTransferType::Control,
         direction,
         status,
         actual_length,
@@ -289,11 +295,62 @@ pub fn log_control_completion(
     );
 }
 
-fn log_control_packet(
+pub fn log_bulk_submission(
+    trb_id: u64,
+    slot_id: u8,
+    bus_number: u16,
+    endpoint_id: u8,
+    direction: UsbDirection,
+    expected_length: u32,
+    payload: &[u8],
+) {
+    log_packet(
+        trb_id,
+        slot_id,
+        bus_number,
+        endpoint_id,
+        UsbEventType::Submission,
+        UsbTransferType::Bulk,
+        direction,
+        0,
+        expected_length,
+        payload,
+        None,
+    );
+}
+
+pub fn log_bulk_completion(
+    trb_id: u64,
+    slot_id: u8,
+    bus_number: u16,
+    endpoint_id: u8,
+    direction: UsbDirection,
+    status: i32,
+    actual_length: u32,
+    payload: &[u8],
+) {
+    log_packet(
+        trb_id,
+        slot_id,
+        bus_number,
+        endpoint_id,
+        UsbEventType::Completion,
+        UsbTransferType::Bulk,
+        direction,
+        status,
+        actual_length,
+        payload,
+        None,
+    );
+}
+
+fn log_packet(
     request_id: u64,
     slot_id: u8,
     bus_number: u16,
+    endpoint_number: u8,
     event: UsbEventType,
+    transfer_type: UsbTransferType,
     direction: UsbDirection,
     status: i32,
     urb_len: u32,
@@ -303,16 +360,36 @@ fn log_control_packet(
     let meta = UsbPacketLinktypeHeader {
         id: request_id,
         event_type: event.code(),
-        transfer_type: UsbTransferType::Control.code(),
-        endpoint_address: direction.endpoint_address(0),
+        transfer_type: transfer_type.code(),
+        endpoint_address: direction.endpoint_address(endpoint_number),
         device_address: slot_id,
         bus_number,
-        setup_flag: setup.is_some() as u8,
-        data_flag: (!payload.is_empty()) as u8,
+        setup_flag: setup_flag_value(transfer_type, setup.is_some()),
+        data_flag: data_flag_value(payload.len()),
         status,
         urb_len,
         data_len: payload.len() as u32,
-        setup: setup.unwrap_or([0; 8]),
+        setup: if matches!(transfer_type, UsbTransferType::Control) {
+            setup.unwrap_or([0; 8])
+        } else {
+            [0; 8]
+        },
     };
     UsbPcapManager::write(&meta, payload);
+}
+
+fn setup_flag_value(transfer_type: UsbTransferType, has_setup: bool) -> u8 {
+    if matches!(transfer_type, UsbTransferType::Control) && has_setup {
+        b'\0'
+    } else {
+        b'-'
+    }
+}
+
+fn data_flag_value(payload_len: usize) -> u8 {
+    if payload_len == 0 {
+        1
+    } else {
+        0
+    }
 }
